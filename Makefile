@@ -1,4 +1,4 @@
-.PHONY: lint fetch-slurm-jobs
+.PHONY: lint fetch-slurm-jobs test
 
 BRANCH ?= main
 
@@ -19,3 +19,5 @@ fetch-slurm-jobs:
 	@rm -rf .tmp-dynamo
 	@echo "✅ Slurm job scripts copied to ./slurm_jobs/"
 
+test:
+	cd /Users/idhanani/Desktop/benchmarks/infbench && uv run python -m tests.test_basic && uv run python -m tests.test_aggregations

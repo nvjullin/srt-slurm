@@ -9,25 +9,25 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from utils import (
-    find_all_runs,
+from srtslurm import (
+    NodeAnalyzer,
+    RunLoader,
     format_config_for_display,
     parse_command_line_from_err,
-    runs_to_dataframe,
 )
-from utils.config_reader import (
+from srtslurm.config_reader import (
     get_all_configs,
+    get_command_line_args,
     get_environment_variables,
-    get_server_config_details,
+    parse_command_line_to_dict,
 )
-from utils.log_parser import parse_all_err_files
-from utils.run_comparison import (
+from srtslurm.run_comparison import (
     calculate_summary_scorecard,
     compare_configs,
     compare_metrics,
     get_delta_data_for_graphs,
 )
-from utils.visualizations import (
+from srtslurm.visualizations import (
     calculate_pareto_frontier,
     create_latency_vs_concurrency_graph,
     create_node_metric_graph,
@@ -73,7 +73,48 @@ st.markdown(
 @st.cache_data
 def load_data(logs_dir):
     """Load and cache benchmark data."""
-    return find_all_runs(logs_dir)
+    loader = RunLoader(logs_dir)
+    runs = loader.load_all()
+
+    # Convert to dicts for compatibility with existing code
+    return [_run_to_dict(run) for run in runs]
+
+
+def _run_to_dict(run) -> dict:
+    """Convert BenchmarkRun object to dict format.
+
+    Temporary converter to maintain compatibility with existing app.py code.
+    Can be removed once app.py is fully migrated to use objects directly.
+    """
+    from datetime import datetime
+
+    # Format date to match legacy format
+    try:
+        dt = datetime.strptime(run.metadata.run_date, "%Y%m%d_%H%M%S")
+        formatted_date = dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        formatted_date = run.metadata.run_date
+
+    return {
+        "slurm_job_id": f"{run.job_id}_{run.metadata.prefill_nodes}P_{run.metadata.decode_nodes}D_{run.metadata.run_date}",
+        "path": run.metadata.path,
+        "run_date": formatted_date,
+        "container": run.metadata.container,
+        "prefill_dp": run.metadata.prefill_nodes,
+        "decode_dp": run.metadata.decode_nodes,
+        "prefill_tp": run.metadata.gpus_per_node,
+        "decode_tp": run.metadata.gpus_per_node,
+        "frontends": run.metadata.num_additional_frontends,
+        "profiler_type": run.profiler.profiler_type,
+        "isl": run.profiler.isl,
+        "osl": run.profiler.osl,
+        "concurrencies": run.profiler.concurrency_values,
+        "output_tps": run.profiler.output_tps,
+        "mean_itl_ms": run.profiler.mean_itl_ms,
+        "mean_ttft_ms": run.profiler.mean_ttft_ms,
+        "mean_tpot_ms": run.profiler.mean_tpot_ms,
+        "request_rate": run.profiler.request_rate,
+    }
 
 
 @st.cache_data(show_spinner=False)
@@ -84,27 +125,157 @@ def load_node_metrics(run_path: str):
         run_path: Path to the run directory
 
     Returns:
-        List of parsed node metrics
+        List of parsed node metrics (as dicts for compatibility)
     """
-    return parse_all_err_files(run_path)
+    analyzer = NodeAnalyzer()
+    nodes = analyzer.parse_run_logs(run_path)
+
+    # Convert to dicts for compatibility with existing visualization code
+    return [_node_to_dict(node) for node in nodes]
+
+
+def _node_to_dict(node) -> dict:
+    """Convert NodeMetrics object to dict format.
+
+    Temporary converter for compatibility with existing visualization code.
+    """
+    return {
+        "node_info": node.node_info,
+        "prefill_batches": [_batch_to_dict(b) for b in node.batches],
+        "memory_snapshots": [_memory_to_dict(m) for m in node.memory_snapshots],
+        "config": node.config,
+        "run_id": node.run_id,
+    }
+
+
+def _batch_to_dict(batch) -> dict:
+    """Convert BatchMetrics to dict."""
+    result = {
+        "timestamp": batch.timestamp,
+        "dp": batch.dp,
+        "tp": batch.tp,
+        "ep": batch.ep,
+        "type": batch.batch_type,
+    }
+    # Add optional fields
+    for field in [
+        "new_seq",
+        "new_token",
+        "cached_token",
+        "token_usage",
+        "running_req",
+        "queue_req",
+        "prealloc_req",
+        "inflight_req",
+        "input_throughput",
+        "gen_throughput",
+        "transfer_req",
+        "num_tokens",
+        "preallocated_usage",
+    ]:
+        value = getattr(batch, field)
+        if value is not None:
+            result[field] = value
+    return result
+
+
+def _memory_to_dict(mem) -> dict:
+    """Convert MemoryMetrics to dict."""
+    result = {
+        "timestamp": mem.timestamp,
+        "dp": mem.dp,
+        "tp": mem.tp,
+        "ep": mem.ep,
+        "type": mem.metric_type,
+    }
+    # Add optional fields
+    for field in ["avail_mem_gb", "mem_usage_gb", "kv_cache_gb", "kv_tokens"]:
+        value = getattr(mem, field)
+        if value is not None:
+            result[field] = value
+    return result
+
+
+def _runs_to_dataframe(run_dicts: list[dict]):
+    """Convert list of run dicts to DataFrame.
+
+    Temporary wrapper that uses old metrics.py logic.
+    TODO: Could be removed by converting run_dicts back to BenchmarkRun objects.
+    """
+    import pandas as pd
+
+    rows = []
+
+    for run in run_dicts:
+        # Calculate total GPUs
+        total_gpus = 0
+        if "prefill_tp" in run and "prefill_dp" in run:
+            total_gpus += run["prefill_tp"] * run["prefill_dp"]
+        if "decode_tp" in run and "decode_dp" in run:
+            total_gpus += run["decode_tp"] * run["decode_dp"]
+        total_gpus = total_gpus if total_gpus > 0 else 1
+
+        run_id = run.get("slurm_job_id", "Unknown")
+        output_tps = run.get("output_tps", [])
+        concurrencies = run.get("concurrencies", [])
+
+        # Create a row for each concurrency level
+        for i in range(len(output_tps)):
+            tps = output_tps[i]
+            tps_per_gpu = tps / total_gpus
+
+            tpot = run.get("mean_tpot_ms", [])[i] if i < len(run.get("mean_tpot_ms", [])) else None
+            tps_per_user = 1000 / tpot if tpot and tpot > 0 else 0
+
+            row = {
+                "Run ID": run_id,
+                "Run Date": run.get("run_date", "N/A"),
+                "Profiler": run.get("profiler_type", "N/A"),
+                "ISL": run.get("isl", "N/A"),
+                "OSL": run.get("osl", "N/A"),
+                "Prefill TP": run.get("prefill_tp", "N/A"),
+                "Prefill DP": run.get("prefill_dp", "N/A"),
+                "Decode TP": run.get("decode_tp", "N/A"),
+                "Decode DP": run.get("decode_dp", "N/A"),
+                "Frontends": run.get("frontends", "N/A"),
+                "Total GPUs": total_gpus,
+                "Request Rate": run.get("request_rate", [])[i]
+                if i < len(run.get("request_rate", []))
+                else "N/A",
+                "Concurrency": concurrencies[i] if i < len(concurrencies) else "N/A",
+                "Output TPS": tps,
+                "Output TPS/GPU": tps_per_gpu,
+                "Output TPS/User": tps_per_user,
+                "Mean TTFT (ms)": run.get("mean_ttft_ms", [])[i]
+                if i < len(run.get("mean_ttft_ms", []))
+                else "N/A",
+                "Mean TPOT (ms)": tpot if tpot else "N/A",
+                "Mean ITL (ms)": run.get("mean_itl_ms", [])[i]
+                if i < len(run.get("mean_itl_ms", []))
+                else "N/A",
+            }
+            rows.append(row)
+
+    return pd.DataFrame(rows)
 
 
 # Wrapper functions to use generic graph builders with caching
 @st.cache_data(show_spinner=False)
-def create_node_throughput_graph(_node_metrics_list, group_by_dp=False):
+def create_node_throughput_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create input throughput over time graph."""
     return create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Input Throughput Over Time by Node",
         y_label="Input Throughput (tokens/s)",
         metric_key="input_throughput",
         mode="lines+markers",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
 
 
 @st.cache_data(show_spinner=False)
-def create_cache_hit_rate_graph(_node_metrics_list, group_by_dp=False):
+def create_cache_hit_rate_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create cache hit rate visualization."""
 
     def calculate_hit_rate(batch):
@@ -116,100 +287,106 @@ def create_cache_hit_rate_graph(_node_metrics_list, group_by_dp=False):
         return None
 
     fig = create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Cache Hit Rate Over Time",
         y_label="Cache Hit Rate (%)",
         metric_key=None,
         value_extractor=calculate_hit_rate,
         mode="lines+markers",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(yaxis={"range": [0, 100]})
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_kv_cache_utilization_graph(_node_metrics_list, group_by_dp=False):
+def create_kv_cache_utilization_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create KV cache utilization visualization."""
     fig = create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="KV Cache Utilization Over Time",
         y_label="Utilization (%)",
         metric_key="token_usage",
         value_extractor=lambda b: b.get("token_usage", 0) * 100,
         mode="lines+markers",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(yaxis={"range": [0, 100]})
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_queue_depth_graph(_node_metrics_list, group_by_dp=False):
-    """Create queue depth visualization."""
+def create_queue_depth_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
+    """Create queued requests visualization."""
     fig = create_node_metric_graph(
-        _node_metrics_list,
-        title="Queue Depth Over Time",
+        node_metrics_list,
+        title="Queued Requests Over Time",
         y_label="Number of Requests",
         metric_key="queue_req",
         mode="lines+markers",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(hovermode="x unified")
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_node_inflight_requests_graph(_node_metrics_list, group_by_dp=False):
+def create_node_inflight_requests_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create inflight requests visualization."""
     fig = create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Inflight Requests Over Time",
         y_label="Number of Requests",
         metric_key="inflight_req",
         mode="lines",
         stackgroup="one",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(hovermode="x unified")
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_decode_running_requests_graph(_node_metrics_list, group_by_dp=False):
+def create_decode_running_requests_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create running requests visualization for decode nodes."""
     fig = create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Running Requests Over Time",
         y_label="Number of Requests",
         metric_key="running_req",
         batch_filter=lambda b: b.get("type") == "decode",
         mode="lines+markers",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(hovermode="x unified")
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_decode_gen_throughput_graph(_node_metrics_list, group_by_dp=False):
+def create_decode_gen_throughput_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create generation throughput visualization for decode nodes."""
     return create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Generation Throughput Over Time",
         y_label="Gen Throughput (tokens/s)",
         metric_key="gen_throughput",
         batch_filter=lambda b: b.get("type") == "decode",
         mode="lines+markers",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
 
 
 @st.cache_data(show_spinner=False)
-def create_decode_transfer_req_graph(_node_metrics_list, group_by_dp=False):
+def create_decode_transfer_req_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create transfer requests visualization for decode nodes."""
     fig = create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Transfer Requests Over Time",
         y_label="Number of Requests",
         metric_key="transfer_req",
@@ -217,16 +394,17 @@ def create_decode_transfer_req_graph(_node_metrics_list, group_by_dp=False):
         mode="lines",
         stackgroup="one",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(hovermode="x unified")
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_decode_prealloc_req_graph(_node_metrics_list, group_by_dp=False):
+def create_decode_prealloc_req_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create prealloc requests visualization for decode nodes."""
     fig = create_node_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Prealloc Requests Over Time",
         y_label="Number of Requests",
         metric_key="prealloc_req",
@@ -234,13 +412,14 @@ def create_decode_prealloc_req_graph(_node_metrics_list, group_by_dp=False):
         mode="lines",
         stackgroup="one",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
     fig.update_layout(hovermode="x unified")
     return fig
 
 
 @st.cache_data(show_spinner=False)
-def create_decode_disagg_stacked_graph(_node_metrics_list, group_by_dp=False):
+def create_decode_disagg_stacked_graph(node_metrics_list, group_by_dp=False, aggregate_all=False):
     """Create stacked area chart for disaggregation request flow."""
     metrics_config = [
         {"key": "prealloc_req", "name": "Prealloc Queue", "color": "rgba(99, 110, 250, 0.3)"},
@@ -249,11 +428,12 @@ def create_decode_disagg_stacked_graph(_node_metrics_list, group_by_dp=False):
     ]
 
     return create_stacked_metric_graph(
-        _node_metrics_list,
+        node_metrics_list,
         title="Disaggregation Request Flow (Stacked)",
         metrics_config=metrics_config,
         batch_filter=lambda b: b.get("type") == "decode",
         group_by_dp=group_by_dp,
+        aggregate_all=aggregate_all,
     )
 
 
@@ -526,8 +706,8 @@ def main():
     # Extract run IDs for compatibility with existing graph functions
     selected_runs = [run.get("slurm_job_id", "Unknown") for run in filtered_runs]
 
-    # Get dataframe
-    df = runs_to_dataframe(filtered_runs)
+    # Get dataframe - use helper function to convert dicts
+    df = _runs_to_dataframe(filtered_runs)
 
     # Filters
     st.sidebar.header("Filters")
@@ -790,11 +970,37 @@ def main():
             )
 
             # Add toggle for grouping
-            group_by_dp = st.checkbox(
-                "📊 Group by DP (show averaged lines per DP group)",
-                value=True,
-                help="When enabled, nodes are grouped by DP index and metrics are averaged across TP workers. This reduces visual clutter when viewing many nodes.",
+            aggregation_mode = st.radio(
+                "📊 Node Aggregation",
+                options=[
+                    "Show individual nodes",
+                    "Group by DP rank (average per DP)",
+                    "Aggregate all nodes (single averaged line)",
+                ],
+                index=2,  # Default to aggregate all
+                horizontal=True,
+                help="Control how node metrics are displayed: individual lines, grouped by DP rank, or fully aggregated across all nodes.",
             )
+
+            # Pre-aggregate nodes ONCE to avoid recomputing for each graph
+            from srtslurm.visualizations import aggregate_all_nodes, group_nodes_by_dp
+
+            if aggregation_mode == "Aggregate all nodes (single averaged line)":
+                with st.spinner("Aggregating nodes..."):
+                    prefill_nodes = aggregate_all_nodes(prefill_nodes)
+                    decode_nodes = aggregate_all_nodes(decode_nodes)
+                group_by_dp = False
+                aggregate_all = False  # Already aggregated
+            elif aggregation_mode == "Group by DP rank (average per DP)":
+                with st.spinner("Grouping by DP..."):
+                    prefill_nodes = group_nodes_by_dp(prefill_nodes)
+                    decode_nodes = group_nodes_by_dp(decode_nodes)
+                group_by_dp = False
+                aggregate_all = False  # Already grouped
+            else:
+                # Individual nodes - no preprocessing
+                group_by_dp = False
+                aggregate_all = False
 
             # Prefill Metrics Section
             if prefill_nodes:
@@ -802,7 +1008,7 @@ def main():
 
                 # Vertically stack graphs for better horizontal stretching
                 throughput_fig = create_node_throughput_graph(
-                    prefill_nodes, group_by_dp=group_by_dp
+                    prefill_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                 )
                 throughput_fig.update_xaxes(showgrid=True)
                 throughput_fig.update_yaxes(showgrid=True)
@@ -812,7 +1018,7 @@ def main():
                 )
 
                 inflight_fig = create_node_inflight_requests_graph(
-                    prefill_nodes, group_by_dp=group_by_dp
+                    prefill_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                 )
                 inflight_fig.update_xaxes(showgrid=True)
                 inflight_fig.update_yaxes(showgrid=True)
@@ -821,15 +1027,20 @@ def main():
                     "Requests that have been sent to decode workers in PD disaggregation mode"
                 )
 
-                cache_fig = create_cache_hit_rate_graph(prefill_nodes, group_by_dp=group_by_dp)
-                cache_fig.update_xaxes(showgrid=True)
-                cache_fig.update_yaxes(showgrid=True)
-                st.plotly_chart(cache_fig, width="stretch", key="prefill_cache_hit")
-                st.caption(
-                    "Percentage of tokens found in prefix cache - higher values indicate better cache reuse and reduced compute"
-                )
+                # Cache hit rate graph hidden for now
+                # cache_fig = create_cache_hit_rate_graph(
+                #     prefill_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
+                # )
+                # cache_fig.update_xaxes(showgrid=True)
+                # cache_fig.update_yaxes(showgrid=True)
+                # st.plotly_chart(cache_fig, width="stretch", key="prefill_cache_hit")
+                # st.caption(
+                #     "Percentage of tokens found in prefix cache - higher values indicate better cache reuse and reduced compute"
+                # )
 
-                kv_fig = create_kv_cache_utilization_graph(prefill_nodes, group_by_dp=group_by_dp)
+                kv_fig = create_kv_cache_utilization_graph(
+                    prefill_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
+                )
                 kv_fig.update_xaxes(showgrid=True)
                 kv_fig.update_yaxes(showgrid=True)
                 st.plotly_chart(kv_fig, width="stretch", key="prefill_kv_util")
@@ -837,12 +1048,15 @@ def main():
                     "Percentage of KV cache memory currently in use - helps tune max-total-tokens and identify memory pressure"
                 )
 
-                queue_fig = create_queue_depth_graph(prefill_nodes, group_by_dp=group_by_dp)
+                queue_fig = create_queue_depth_graph(
+                    prefill_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
+                )
+                queue_fig.update_layout(title="PREFILL Queued Requests")
                 queue_fig.update_xaxes(showgrid=True)
                 queue_fig.update_yaxes(showgrid=True)
-                st.plotly_chart(queue_fig, width="stretch", key="prefill_queue")
+                st.plotly_chart(queue_fig, width="stretch", key="prefill_queue_v2")
                 st.caption(
-                    "Number of requests waiting in queue - growing queue indicates system overload or backpressure"
+                    "Prefill requests waiting in queue - growing queue indicates backpressure or overload"
                 )
 
             # Decode Metrics Section
@@ -858,7 +1072,7 @@ def main():
                     )
                 else:
                     running_fig = create_decode_running_requests_graph(
-                        decode_nodes, group_by_dp=group_by_dp
+                        decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                     )
                     running_fig.update_xaxes(showgrid=True)
                     running_fig.update_yaxes(showgrid=True)
@@ -868,7 +1082,7 @@ def main():
                     )
 
                     gen_fig = create_decode_gen_throughput_graph(
-                        decode_nodes, group_by_dp=group_by_dp
+                        decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                     )
                     gen_fig.update_xaxes(showgrid=True)
                     gen_fig.update_yaxes(showgrid=True)
@@ -878,7 +1092,7 @@ def main():
                     )
 
                     kv_decode_fig = create_kv_cache_utilization_graph(
-                        decode_nodes, group_by_dp=group_by_dp
+                        decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                     )
                     kv_decode_fig.update_xaxes(showgrid=True)
                     kv_decode_fig.update_yaxes(showgrid=True)
@@ -888,13 +1102,123 @@ def main():
                     )
 
                     queue_decode_fig = create_queue_depth_graph(
-                        decode_nodes, group_by_dp=group_by_dp
+                        decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                     )
+                    queue_decode_fig.update_layout(title="DECODE Queued Requests")
                     queue_decode_fig.update_xaxes(showgrid=True)
                     queue_decode_fig.update_yaxes(showgrid=True)
-                    st.plotly_chart(queue_decode_fig, width="stretch", key="decode_queue")
+                    st.plotly_chart(queue_decode_fig, width="stretch", key="decode_queue_v2")
                     st.caption(
-                        "Number of requests waiting in decode queue - indicates decode capacity constraints"
+                        "Decode requests waiting in queue - indicates decode capacity constraints"
+                    )
+
+                    # Rate Matching Graph
+                    st.divider()
+                    st.markdown("#### Rate Match")
+                    st.caption(
+                        "Compare prefill input rate vs decode generation rate to verify proper node ratio"
+                    )
+
+                    # Create rate match graph
+                    rate_fig = go.Figure()
+
+                    # Get prefill input throughput over time
+                    if prefill_nodes:
+                        for p_node in prefill_nodes:
+                            timestamps = []
+                            input_tps = []
+
+                            for batch in p_node["prefill_batches"]:
+                                if batch.get("input_throughput") is not None:
+                                    ts = batch.get("timestamp", "")
+                                    if ts:
+                                        timestamps.append(ts)
+                                        input_tps.append(batch["input_throughput"])
+
+                            if timestamps:
+                                # Convert timestamps to elapsed seconds from first timestamp
+                                from datetime import datetime
+
+                                first_time = datetime.strptime(timestamps[0], "%Y-%m-%d %H:%M:%S")
+                                elapsed = [
+                                    (
+                                        datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") - first_time
+                                    ).total_seconds()
+                                    for ts in timestamps
+                                ]
+
+                                rate_fig.add_trace(
+                                    go.Scatter(
+                                        x=elapsed,
+                                        y=input_tps,
+                                        mode="lines+markers",
+                                        name="Prefill Input (tok/s)",
+                                        line={"color": "orange", "width": 2},
+                                    )
+                                )
+
+                    # Get decode gen throughput over time (sum across all decode nodes)
+                    if decode_nodes:
+                        # Collect all decode batches with timestamps
+                        all_decode_batches = {}
+                        for d_node in decode_nodes:
+                            for batch in d_node["prefill_batches"]:
+                                if (
+                                    batch.get("gen_throughput") is not None
+                                    and batch.get("gen_throughput") > 0
+                                ):
+                                    ts = batch.get("timestamp", "")
+                                    if ts:
+                                        if ts not in all_decode_batches:
+                                            all_decode_batches[ts] = []
+                                        all_decode_batches[ts].append(batch["gen_throughput"])
+
+                        # Average across nodes at each timestamp, then multiply by num decode nodes
+                        timestamps = []
+                        total_gen_tps = []
+                        num_decode = len(decode_nodes)
+
+                        for ts in sorted(all_decode_batches.keys()):
+                            avg_gen = sum(all_decode_batches[ts]) / len(all_decode_batches[ts])
+                            total_gen = avg_gen * num_decode  # Scale by number of decode nodes
+                            timestamps.append(ts)
+                            total_gen_tps.append(total_gen)
+
+                        if timestamps:
+                            # Convert to elapsed seconds
+                            from datetime import datetime
+
+                            first_time = datetime.strptime(timestamps[0], "%Y-%m-%d %H:%M:%S")
+                            elapsed = [
+                                (
+                                    datetime.strptime(ts, "%Y-%m-%d %H:%M:%S") - first_time
+                                ).total_seconds()
+                                for ts in timestamps
+                            ]
+
+                            rate_fig.add_trace(
+                                go.Scatter(
+                                    x=elapsed,
+                                    y=total_gen_tps,
+                                    mode="lines+markers",
+                                    name=f"Decode Gen (tok/s) × {num_decode} nodes",
+                                    line=dict(color="green", width=2),
+                                )
+                            )
+
+                    rate_fig.update_layout(
+                        title="Rate Match: Prefill Input vs Decode Generation",
+                        xaxis_title="Time Elapsed (seconds)",
+                        yaxis_title="Throughput (tokens/s)",
+                        hovermode="x unified",
+                        height=500,
+                    )
+                    rate_fig.update_xaxes(showgrid=True)
+                    rate_fig.update_yaxes(showgrid=True)
+
+                    st.plotly_chart(rate_fig, width="stretch", key="rate_match")
+                    st.caption(
+                        f"Rate matched when lines align. Prefill: {len(prefill_nodes)} node(s), Decode: {len(decode_nodes)} node(s)"
                     )
 
                     # Disaggregation metrics with toggle
@@ -911,7 +1235,7 @@ def main():
 
                     if disagg_view == "Stacked (Combined)":
                         stacked_fig = create_decode_disagg_stacked_graph(
-                            decode_nodes, group_by_dp=group_by_dp
+                            decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                         )
                         stacked_fig.update_xaxes(showgrid=True)
                         stacked_fig.update_yaxes(showgrid=True)
@@ -921,7 +1245,7 @@ def main():
                         )
                     else:
                         transfer_fig = create_decode_transfer_req_graph(
-                            decode_nodes, group_by_dp=group_by_dp
+                            decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                         )
                         transfer_fig.update_xaxes(showgrid=True)
                         transfer_fig.update_yaxes(showgrid=True)
@@ -931,7 +1255,7 @@ def main():
                         )
 
                         prealloc_fig = create_decode_prealloc_req_graph(
-                            decode_nodes, group_by_dp=group_by_dp
+                            decode_nodes, group_by_dp=group_by_dp, aggregate_all=aggregate_all
                         )
                         prealloc_fig.update_xaxes(showgrid=True)
                         prealloc_fig.update_yaxes(showgrid=True)
@@ -965,244 +1289,195 @@ def main():
                     st.error(config_data["error"])
                     continue
 
-                # High-level Summary
-                st.markdown("### 📋 Overview")
+                # Compact overview at top
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    st.metric("Total Nodes", config_data["summary"]["num_nodes"])
+                    st.metric("Nodes", config_data["summary"]["num_nodes"])
                 with col2:
-                    st.metric("GPU Type", config_data["summary"]["gpu_type"])
+                    st.metric("GPU", config_data["summary"]["gpu_type"])
                 with col3:
-                    profiler = run.get("profiler_type", "N/A")
-                    st.metric("Profiler", profiler)
+                    st.metric("ISL/OSL", f"{run.get('isl', 'N/A')}/{run.get('osl', 'N/A')}")
                 with col4:
-                    st.metric("ISL / OSL", f"{run.get('isl', 'N/A')} / {run.get('osl', 'N/A')}")
+                    st.metric("Profiler", run.get("profiler_type", "N/A"))
 
-                st.markdown(f"**Model:** {config_data['summary']['model']}")
+                st.caption(f"Model: {config_data['summary']['model']}")
+                st.divider()
 
-                # Deployment Topology - Parse from .err files
-                st.markdown("### 🚀 Deployment Topology")
-
-                # Parse .err files to get actual services running on each node
-                parsed_data = parse_command_line_from_err(run_path)
-                physical_nodes = parsed_data.get("services", {})
-
-                # Enrich with GPU info from config data
-                config_node_info = {}
-                all_nodes = (
-                    config_data.get("prefill_nodes", [])
-                    + config_data.get("decode_nodes", [])
-                    + config_data.get("frontend_nodes", [])
-                    + config_data.get("other_nodes", [])
+                # Use tabs for cleaner organization
+                config_tab1, config_tab2, config_tab3 = st.tabs(
+                    ["📋 Topology", "⚙️ Node Config", "🌍 Environment"]
                 )
 
-                for node in all_nodes:
-                    node_name = node.get("node_name", "Unknown")
-                    config_node_info[node_name] = {
-                        "gpu_count": node.get("gpu_count", "N/A"),
-                        "tp": node.get("tp_size", "N/A"),
-                        "dp": node.get("dp_size", "N/A"),
-                    }
-
-                # Display by physical node
-                if physical_nodes:
-                    num_nodes = len(physical_nodes)
-                    cols_per_row = 3
-
-                    node_items = sorted(physical_nodes.items())
-                    for i in range(0, num_nodes, cols_per_row):
-                        cols = st.columns(cols_per_row)
-                        for j, (phys_node, service_types) in enumerate(
-                            node_items[i : i + cols_per_row]
-                        ):
-                            with cols[j]:
-                                st.markdown(f"**🖥️ {phys_node}**")
-                                for service_type in sorted(set(service_types)):  # Deduplicate
-                                    # Add emoji based on service type
-                                    emoji = {
-                                        "prefill": "📤",
-                                        "decode": "📥",
-                                        "frontend": "🌐",
-                                        "nginx": "🌐",
-                                        "nats": "📡",
-                                        "etcd": "🗄️",
-                                    }.get(service_type, "⚙️")
-
-                                    st.text(f"{emoji} {service_type}")
-
-                                    # Try to find GPU info for this service
-                                    # Look for matching config entry
-                                    for config_name, info in config_node_info.items():
-                                        if phys_node in config_name and service_type in config_name:
-                                            if info["gpu_count"] != "N/A" and info["gpu_count"] > 0:
-                                                st.caption(
-                                                    f"  GPUs: {info['gpu_count']} | TP: {info['tp']} | DP: {info['dp']}"
-                                                )
-                                            break
-                else:
-                    st.caption("No node topology information available")
-
-                # Get detailed config from first available node
+                # Get all configs for use in tabs
                 all_configs = get_all_configs(run_path)
-                if all_configs:
-                    # Server Configuration - Display all flags with explicit flags first
-                    st.markdown("### ⚙️ Server Configuration")
-                    server_config = get_server_config_details(all_configs[0])
 
-                    if server_config:
-                        # Get explicit flags from parsed command line
-                        explicit_flags = parsed_data.get("explicit_flags", set())
+                with config_tab1:
+                    # Topology - compact summary
+                    parsed_data = parse_command_line_from_err(run_path)
+                    physical_nodes = parsed_data.get("services", {})
 
-                        # Convert flag names: disaggregation-mode -> disaggregation_mode
-                        explicit_flags_normalized = {
-                            flag.replace("-", "_") for flag in explicit_flags
-                        }
+                    if physical_nodes:
+                        # Count by service type
+                        service_counts = {}
+                        for services in physical_nodes.values():
+                            for svc in set(services):
+                                service_counts[svc] = service_counts.get(svc, 0) + 1
 
-                        # Separate explicitly set flags from defaults
-                        explicit_items = []
-                        default_items = []
+                        # Display summary
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Prefill Nodes", service_counts.get("prefill", 0))
+                        with col2:
+                            st.metric("Decode Nodes", service_counts.get("decode", 0))
+                        with col3:
+                            st.metric("Frontend Nodes", service_counts.get("frontend", 0))
 
-                        for key, value in sorted(server_config.items()):
-                            if key in explicit_flags_normalized:
-                                explicit_items.append((key, value))
-                            else:
-                                default_items.append((key, value))
+                        # Compact node grid (collapsed by default)
+                        with st.expander(
+                            f"View all {len(physical_nodes)} physical nodes", expanded=False
+                        ):
+                            cols_per_row = 4
+                            node_items = sorted(physical_nodes.items())
+                            for i in range(0, len(node_items), cols_per_row):
+                                cols = st.columns(cols_per_row)
+                                for j, (phys_node, service_types) in enumerate(
+                                    node_items[i : i + cols_per_row]
+                                ):
+                                    with cols[j]:
+                                        st.caption(f"**{phys_node}**")
+                                        for svc in sorted(set(service_types)):
+                                            emoji = {
+                                                "prefill": "📤",
+                                                "decode": "📥",
+                                                "frontend": "🌐",
+                                                "nginx": "🌐",
+                                            }.get(svc, "⚙️")
+                                            st.caption(f"{emoji} {svc}")
+                    else:
+                        st.info("No topology information available")
 
-                        # Display explicitly set flags first
-                        if explicit_items:
-                            st.markdown("**Explicitly Set Flags**")
-                            num_items = len(explicit_items)
+                with config_tab2:
+                    # Node Configuration - dropdown to select specific node
+                    if all_configs:
+                        # Create node selection dropdown
+                        node_names = [
+                            config.get("filename", f"Node {i}")
+                            .replace("_config.json", "")
+                            .replace("watchtower-aqua-", "")
+                            .replace("watchtower-navy-", "")
+                            for i, config in enumerate(all_configs)
+                        ]
+
+                        # Group by type
+                        prefill_nodes = [
+                            (i, name)
+                            for i, name in enumerate(node_names)
+                            if "prefill" in name.lower()
+                        ]
+                        decode_nodes = [
+                            (i, name)
+                            for i, name in enumerate(node_names)
+                            if "decode" in name.lower()
+                        ]
+                        other_nodes = [
+                            (i, name)
+                            for i, name in enumerate(node_names)
+                            if "prefill" not in name.lower() and "decode" not in name.lower()
+                        ]
+
+                        # Create categorized options
+                        node_options = []
+                        if prefill_nodes:
+                            node_options.extend([f"📤 {name}" for _, name in prefill_nodes])
+                        if decode_nodes:
+                            node_options.extend([f"📥 {name}" for _, name in decode_nodes])
+                        if other_nodes:
+                            node_options.extend([f"🖥️ {name}" for _, name in other_nodes])
+
+                        # Map back to indices
+                        option_to_idx = {}
+                        all_indexed = prefill_nodes + decode_nodes + other_nodes
+                        for i, (idx, _) in enumerate(all_indexed):
+                            option_to_idx[node_options[i]] = idx
+
+                        selected_option = st.selectbox(
+                            "Select node",
+                            options=node_options,
+                            key=f"config_node_{run_id}",
+                        )
+
+                        selected_idx = option_to_idx[selected_option]
+                        selected_config = all_configs[selected_idx]
+
+                        # Show command line args (actual flags passed)
+                        cmd_args = get_command_line_args(selected_config)
+
+                        if cmd_args:
+                            cmd_dict = parse_command_line_to_dict(cmd_args)
+
+                            st.markdown(f"**Command Line Arguments** ({len(cmd_dict)} flags)")
+                            st.caption("Actual flags passed on command line for this node")
+
+                            # Display all flags in 3 columns
+                            num_items = len(cmd_dict)
                             items_per_col = (num_items + 2) // 3
 
                             col1, col2, col3 = st.columns(3)
 
-                            for idx, (key, value) in enumerate(explicit_items):
+                            for idx, (key, value) in enumerate(sorted(cmd_dict.items())):
                                 col_idx = idx // items_per_col
+                                display_val = (
+                                    str(value)[:60] + "..." if len(str(value)) > 60 else value
+                                )
+
                                 if col_idx == 0:
                                     with col1:
-                                        st.caption(f"{key}: {value}")
+                                        st.caption(f"`{key}`: **{display_val}**")
                                 elif col_idx == 1:
                                     with col2:
-                                        st.caption(f"{key}: {value}")
+                                        st.caption(f"`{key}`: **{display_val}**")
                                 else:
                                     with col3:
-                                        st.caption(f"{key}: {value}")
+                                        st.caption(f"`{key}`: **{display_val}**")
+                        else:
+                            st.info("No command line args found")
+                    else:
+                        st.info("No config files found")
 
-                        # Display default flags in an expander
-                        if default_items:
-                            with st.expander(
-                                f"Default Flags ({len(default_items)} total)", expanded=False
-                            ):
-                                num_items = len(default_items)
-                                items_per_col = (num_items + 2) // 3
-
-                                col1, col2, col3 = st.columns(3)
-
-                                for idx, (key, value) in enumerate(default_items):
-                                    col_idx = idx // items_per_col
-                                    if col_idx == 0:
-                                        with col1:
-                                            st.caption(f"{key}: {value}")
-                                    elif col_idx == 1:
-                                        with col2:
-                                            st.caption(f"{key}: {value}")
-                                    else:
-                                        with col3:
-                                            st.caption(f"{key}: {value}")
-
-                    # Environment Variables per Node
-                    st.markdown("### 🌍 Environment Variables")
-
-                    # Group nodes by type for easier navigation
-                    node_names = [
-                        config.get("filename", f"Node {i}").replace("_config.json", "")
-                        for i, config in enumerate(all_configs)
-                    ]
-
-                    if len(node_names) > 0:
-                        prefill_configs = [
-                            (name, config)
-                            for name, config in zip(node_names, all_configs, strict=False)
-                            if "prefill" in name.lower()
-                        ]
-                        decode_configs = [
-                            (name, config)
-                            for name, config in zip(node_names, all_configs, strict=False)
-                            if "decode" in name.lower()
-                        ]
-                        other_configs = [
-                            (name, config)
-                            for name, config in zip(node_names, all_configs, strict=False)
-                            if "prefill" not in name.lower() and "decode" not in name.lower()
+                with config_tab3:
+                    # Environment Variables
+                    if all_configs:
+                        # Use same node selector
+                        node_names = [
+                            config.get("filename", f"Node {i}")
+                            .replace("_config.json", "")
+                            .replace("watchtower-aqua-", "")
+                            .replace("watchtower-navy-", "")
+                            for i, config in enumerate(all_configs)
                         ]
 
-                        # Display environment variables by node type
-                        if prefill_configs:
-                            with st.expander("📤 Prefill Nodes", expanded=False):
-                                for node_name, config in prefill_configs:
-                                    st.markdown(
-                                        f"**`{node_name.replace('watchtower-navy-', '')}`**"
-                                    )
-                                    env_vars = get_environment_variables(config)
-                                    if env_vars:
-                                        cols = st.columns(min(len(env_vars), 3))
-                                        for idx, (category, vars_dict) in enumerate(
-                                            env_vars.items()
-                                        ):
-                                            with cols[idx % len(cols)]:
-                                                st.markdown(f"*{category}*")
-                                                for key, value in list(vars_dict.items())[
-                                                    :3
-                                                ]:  # Show first 3
-                                                    st.caption(f"{key}={value}")
-                                                if len(vars_dict) > 3:
-                                                    with st.expander(f"Show all {len(vars_dict)}"):
-                                                        for key, value in vars_dict.items():
-                                                            st.caption(f"{key}={value}")
-                                    else:
-                                        st.caption("No environment variables found")
+                        # Simple select (no emojis this time)
+                        selected_name = st.selectbox(
+                            "Select node",
+                            options=node_names,
+                            key=f"env_node_{run_id}",
+                        )
 
-                        if decode_configs:
-                            with st.expander("📥 Decode Nodes", expanded=False):
-                                for node_name, config in decode_configs:
-                                    st.markdown(
-                                        f"**`{node_name.replace('watchtower-navy-', '')}`**"
-                                    )
-                                    env_vars = get_environment_variables(config)
-                                    if env_vars:
-                                        cols = st.columns(min(len(env_vars), 3))
-                                        for idx, (category, vars_dict) in enumerate(
-                                            env_vars.items()
-                                        ):
-                                            with cols[idx % len(cols)]:
-                                                st.markdown(f"*{category}*")
-                                                for key, value in list(vars_dict.items())[:3]:
-                                                    st.caption(f"{key}={value}")
-                                                if len(vars_dict) > 3:
-                                                    with st.expander(f"Show all {len(vars_dict)}"):
-                                                        for key, value in vars_dict.items():
-                                                            st.caption(f"{key}={value}")
-                                    else:
-                                        st.caption("No environment variables found")
+                        selected_config = all_configs[node_names.index(selected_name)]
+                        env_vars = get_environment_variables(selected_config)
 
-                        if other_configs:
-                            with st.expander("🖥️ Other Nodes", expanded=False):
-                                for node_name, config in other_configs:
-                                    st.markdown(
-                                        f"**`{node_name.replace('watchtower-navy-', '')}`**"
-                                    )
-                                    env_vars = get_environment_variables(config)
-                                    if env_vars:
-                                        for category, vars_dict in env_vars.items():
-                                            st.markdown(f"*{category}*")
-                                            for key, value in list(vars_dict.items())[:5]:
-                                                st.caption(f"{key}={value}")
-                                            if len(vars_dict) > 5:
-                                                with st.expander(f"Show all {len(vars_dict)}"):
-                                                    for key, value in vars_dict.items():
-                                                        st.caption(f"{key}={value}")
-                                    else:
-                                        st.caption("No environment variables found")
+                        if env_vars:
+                            for category, vars_dict in env_vars.items():
+                                with st.expander(
+                                    f"{category} ({len(vars_dict)} vars)",
+                                    expanded=category in ["NCCL", "SGLANG"],
+                                ):
+                                    for key, value in sorted(vars_dict.items()):
+                                        st.caption(f"`{key}`: {value}")
+                        else:
+                            st.info("No environment variables found")
+                    else:
+                        st.info("No config files found")
 
     with tab5:
         st.subheader("🔬 Run Comparison (Isolation Mode)")

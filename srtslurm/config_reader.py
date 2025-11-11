@@ -5,50 +5,12 @@ Configuration reader module for parsing node config files
 import json
 import logging
 import os
-from typing import Any, TypedDict
+from typing import Any
+
+from .models import NodeConfig, ParsedCommandInfo
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-
-# Type definitions for expected JSON structures
-class GPUInfo(TypedDict, total=False):
-    """Expected structure of GPU info in config."""
-
-    count: int
-    gpus: list[dict[str, Any]]
-    name: str
-    memory_total: str
-    driver_version: str
-
-
-class ServerArgs(TypedDict, total=False):
-    """Expected structure of server_args in config.
-
-    Note: This is partial - actual configs may have many more fields.
-    Use total=False to allow missing keys.
-    """
-
-    tp_size: int
-    dp_size: int
-    pp_size: int
-    ep_size: int
-    served_model_name: str
-    attention_backend: str
-    kv_cache_dtype: str
-    max_total_tokens: int
-    chunked_prefill_size: int
-    disaggregation_mode: str
-    context_length: int
-
-
-class NodeConfig(TypedDict, total=False):
-    """Expected structure of a node config JSON file."""
-
-    filename: str
-    gpu_info: GPUInfo
-    config: dict[str, Any]  # Contains 'server_args' and other fields
-    environment: dict[str, str]
 
 
 def validate_config_structure(config: dict[str, Any], config_path: str) -> None:
@@ -270,43 +232,58 @@ def get_environment_variables(config: dict) -> dict:
     return {k: v for k, v in categories.items() if v}
 
 
-def get_disaggregation_config(config: dict) -> dict:
-    """Extract disaggregation-specific configuration."""
-    if "config" not in config or "server_args" not in config["config"]:
-        return {}
+def get_command_line_args(config: dict) -> list[str]:
+    """Extract actual command line args from runtime_info.
 
-    server_args = config["config"]["server_args"]
+    These are the ACTUAL args that were passed, not the processed server_args
+    which may include defaults.
 
-    return {
-        "mode": server_args.get("disaggregation_mode", "N/A"),
-        "transfer_backend": server_args.get("disaggregation_transfer_backend", "N/A"),
-        "bootstrap_port": server_args.get("disaggregation_bootstrap_port", "N/A"),
-        "decode_tp": server_args.get("disaggregation_decode_tp", "N/A"),
-        "decode_dp": server_args.get("disaggregation_decode_dp", "N/A"),
-        "prefill_pp": server_args.get("disaggregation_prefill_pp", "N/A"),
-        "decode_enable_offload_kvcache": server_args.get(
-            "disaggregation_decode_enable_offload_kvcache", "N/A"
-        ),
-        "num_reserved_decode_tokens": server_args.get("num_reserved_decode_tokens", "N/A"),
-        "decode_polling_interval": server_args.get("disaggregation_decode_polling_interval", "N/A"),
-    }
+    Args:
+        config: Node config dict
+
+    Returns:
+        List of command line arguments, empty if not found
+    """
+    if "runtime_info" not in config:
+        return []
+
+    runtime_info = config["runtime_info"]
+    return runtime_info.get("command_line_args", [])
 
 
-def get_server_config_details(config: dict) -> dict:
-    """Extract all server configuration dynamically from JSON."""
-    if "config" not in config or "server_args" not in config["config"]:
-        return {}
+def parse_command_line_to_dict(cmd_args: list[str]) -> dict[str, str]:
+    """Parse command line args list into a dict of flag->value pairs.
 
-    # Return ALL server_args from the config without hardcoding specific keys
-    server_args = config["config"]["server_args"]
-    return dict(server_args)  # Return everything dynamically
+    Args:
+        cmd_args: List like ["--flag1", "value1", "--flag2", "--flag3", "value3"]
 
+    Returns:
+        Dict like {"flag1": "value1", "flag2": "True", "flag3": "value3"}
+    """
+    parsed = {}
+    i = 0
 
-class ParsedCommandInfo(TypedDict):
-    """Expected return structure from parse_command_line_from_err."""
+    while i < len(cmd_args):
+        arg = cmd_args[i]
 
-    explicit_flags: set
-    services: dict[str, list[str]]
+        # Skip non-flag arguments (like script name)
+        if not arg.startswith("--"):
+            i += 1
+            continue
+
+        # Remove -- prefix
+        flag = arg[2:]
+
+        # Check if next arg is a value or another flag
+        if i + 1 < len(cmd_args) and not cmd_args[i + 1].startswith("--"):
+            parsed[flag] = cmd_args[i + 1]
+            i += 2
+        else:
+            # Boolean flag (no value)
+            parsed[flag] = "True"
+            i += 1
+
+    return parsed
 
 
 def parse_command_line_from_err(run_path: str) -> ParsedCommandInfo:
