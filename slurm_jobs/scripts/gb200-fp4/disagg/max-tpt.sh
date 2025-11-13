@@ -199,7 +199,7 @@ elif [ "$mode" = "decode" ]; then
         --trust-remote-code \
         --disaggregation-mode decode \
         --host 0.0.0.0 \
-        --decode-log-interval 1 \
+        --decode-log-interval 1000 \
         --max-running-requests 67584 \
         --context-length 2176 \
         --disable-radix-cache \
