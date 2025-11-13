@@ -85,7 +85,6 @@ if [ "$mode" = "prefill" ]; then
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     SGLANG_NVFP4_CKPT_FP8_GEMM_IN_ATTN=1 \
     SGLANG_PER_TOKEN_GROUP_QUANT_8BIT_V2=1 \
-    SGL_JIT_DEEPGEMM_PRECOMPILE=0 \
     SGLANG_DISAGGREGATION_HEARTBEAT_MAX_FAILURE=100000 \
     SGLANG_DISAGGREGATION_BOOTSTRAP_TIMEOUT=100000 \
     SGLANG_DISAGGREGATION_WAITING_TIMEOUT=100000 \
@@ -101,7 +100,6 @@ if [ "$mode" = "prefill" ]; then
     python3 -m dynamo.sglang \
         --served-model-name deepseek-ai/DeepSeek-R1 \
         --model-path /model/ \
-        --skip-tokenizer-init \
         --disaggregation-mode prefill \
         --decode-log-interval 1000 \
         --max-running-requests 30000 \
@@ -161,7 +159,6 @@ elif [ "$mode" = "decode" ]; then
 
     SGLANG_NVFP4_CKPT_FP8_GEMM_IN_ATTN=1 \
     SGLANG_PER_TOKEN_GROUP_QUANT_8BIT_V2=1 \
-    SGL_JIT_DEEPGEMM_PRECOMPILE=0 \
     MC_TE_METRIC=true \
     MC_FORCE_MNNVL=1 \
     NCCL_MNNVL_ENABLE=1 \
@@ -179,7 +176,6 @@ elif [ "$mode" = "decode" ]; then
     python3 -m dynamo.sglang \
         --served-model-name deepseek-ai/DeepSeek-R1 \
         --model-path /model/ \
-        --skip-tokenizer-init \
         --trust-remote-code \
         --disaggregation-mode decode \
         --host 0.0.0.0 \
