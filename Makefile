@@ -54,10 +54,10 @@ setup:
 	chmod +x configs/etcd configs/etcdctl; \
 	rm "configs/$$ETCD_TAR"; \
 	echo "✅ Done. Contents of configs directory:"; \
-	ls -lh configs/
-	@echo ""
-	@echo "⚙️  Setting up srtslurm.toml..."
-	@if [ -f srtslurm.toml ]; then \
+	ls -lh configs/; \
+	echo ""; \
+	echo "⚙️  Setting up srtslurm.toml..."; \
+	if [ -f srtslurm.toml ]; then \
 		echo "ℹ️  srtslurm.toml already exists, skipping..."; \
 	else \
 		echo "Creating srtslurm.toml with your cluster settings..."; \
