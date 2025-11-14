@@ -1,4 +1,4 @@
-.PHONY: lint test setup-configs dashboard sync-to-cloud delete-from-cloud
+.PHONY: lint test setup-configs dashboard sync-to-cloud delete-from-cloud cleanup
 
 NATS_VERSION ?= v2.10.28
 ETCD_VERSION ?= v3.5.21
@@ -109,4 +109,42 @@ setup:
 		echo "  prefix: \"benchmark-results/\"" >> srtslurm.yaml; \
 		echo "✅ Created srtslurm.yaml"; \
 		echo "   You can edit it anytime or run: cp srtslurm.yaml.example srtslurm.yaml"; \
+	fi
+
+cleanup:
+	@echo "🧹 Scanning logs directory for runs without benchmark results..."
+	@EMPTY_DIRS=""; \
+	if [ ! -d "$(LOGS_DIR)" ]; then \
+		echo "❌ Logs directory $(LOGS_DIR) does not exist"; \
+		exit 1; \
+	fi; \
+	for dir in $(LOGS_DIR)/*/; do \
+		if [ -d "$$dir" ]; then \
+			run_name=$$(basename "$$dir"); \
+			has_subdirs=$$(find "$$dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l); \
+			if [ "$$has_subdirs" -eq 0 ]; then \
+				EMPTY_DIRS="$$EMPTY_DIRS$$dir\n"; \
+			fi; \
+		fi; \
+	done; \
+	if [ -z "$$EMPTY_DIRS" ]; then \
+		echo "✅ No empty run directories found!"; \
+		exit 0; \
+	fi; \
+	echo ""; \
+	echo "Found the following run directories without benchmark results:"; \
+	echo ""; \
+	echo "$$EMPTY_DIRS" | grep -v '^$$'; \
+	echo ""; \
+	read -p "❗ Delete these directories? [y/N]: " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		echo "$$EMPTY_DIRS" | grep -v '^$$' | while read -r dir; do \
+			if [ -n "$$dir" ]; then \
+				echo "🗑️  Removing $$dir"; \
+				rm -rf "$$dir"; \
+			fi; \
+		done; \
+		echo "✅ Cleanup complete!"; \
+	else \
+		echo "❌ Cleanup cancelled."; \
 	fi
