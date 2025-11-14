@@ -29,7 +29,7 @@ sync-run:
 		exit 1; \
 	fi
 	@echo "☁️  Syncing run $(RUN_ID) to cloud storage..."
-	@uv run python -m srtslurm.sync_results --logs-dir $(LOGS_DIR) push $(RUN_ID)
+	@uv run python -m srtslurm.sync_results --logs-dir $(LOGS_DIR) push $(LOGS_DIR)/$(RUN_ID)
 	@echo "✅ Sync complete!"
 
 delete-from-cloud:
