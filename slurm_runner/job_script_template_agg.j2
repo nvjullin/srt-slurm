@@ -184,6 +184,12 @@ WORKER_ARGS="$WORKER_ARGS --multiple-frontends-enabled"
 WORKER_ARGS="$WORKER_ARGS --use-dynamo-whls"
 {% endraw %}
 {% endif %}
+{% if sglang_torch_profiler %}
+{% raw %}
+# Enable torch profiling mode
+WORKER_ARGS="$WORKER_ARGS --sglang-torch-profiler"
+{% endraw %}
+{% endif %}
 {% raw %}
 
 {% endraw %}

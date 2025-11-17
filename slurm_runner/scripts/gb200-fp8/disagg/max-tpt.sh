@@ -90,6 +90,13 @@ if [ "$mode" = "prefill" ]; then
     if [[ "${USE_INIT_LOCATIONS,,}" == "true" ]]; then command_suffix="--init-expert-location /configs/prefill_dsr1-0528_in1000out1000_num40000.json"; fi
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
 
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode prefill"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
+
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     MC_TE_METRIC=true \
     SGLANG_DISAGGREGATION_HEARTBEAT_MAX_FAILURE=100000 \
@@ -107,7 +114,7 @@ if [ "$mode" = "prefill" ]; then
         --model-path /model/ \
         --skip-tokenizer-init \
         --trust-remote-code \
-        --disaggregation-mode prefill \
+        $DISAGG_MODE_FLAG \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --disaggregation-bootstrap-port 30001 \
         --nnodes "$TOTAL_NODES" \
@@ -151,6 +158,13 @@ elif [ "$mode" = "decode" ]; then
     if [[ "${USE_INIT_LOCATIONS,,}" == "true" ]]; then command_suffix="--init-expert-location /configs/decode_dsr1-0528_loadgen_in1024out1024_num2000_2p12d.json"; fi
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
 
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode decode"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
+
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     SGLANG_DEEPEP_NUM_MAX_DISPATCH_TOKENS_PER_RANK=768  \
     MC_TE_METRIC=true \
@@ -171,7 +185,7 @@ elif [ "$mode" = "decode" ]; then
         --model-path /model/ \
         --skip-tokenizer-init \
         --trust-remote-code \
-        --disaggregation-mode decode \
+        $DISAGG_MODE_FLAG \
         --dist-init-addr "$HOST_IP_MACHINE:$PORT" \
         --disaggregation-bootstrap-port 30001 \
         --nnodes "$TOTAL_NODES" \

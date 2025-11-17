@@ -641,6 +641,7 @@ def main(input_args: list[str] | None = None):
         "enable_config_dump": args.enable_config_dump,
         "use_dynamo_whls": True,  # Always true when config-dir is set
         "log_dir_prefix": log_dir_prefix,
+        "sglang_torch_profiler": args.sglang_torch_profiler,
     }
 
     # Create temporary file for sbatch script
@@ -651,87 +652,14 @@ def main(input_args: list[str] | None = None):
     try:
         submitted_job_ids = []
 
-        # Handle disaggregated profiling mode: submit 2 separate jobs (prefill + decode)
-        if args.sglang_torch_profiler and not is_aggregated:
-            # Determine base log directory first
-            if args.log_dir:
-                base_log_dir = pathlib.Path(args.log_dir)
-                if not base_log_dir.is_absolute():
-                    base_log_dir = pathlib.Path(__file__).parent / base_log_dir
-            else:
-                base_log_dir = pathlib.Path(__file__).parent.parent / "logs"
+        # Single job submission for all modes (benchmarking and profiling)
+        _, rendered_script = generate_job_script(
+            template_path, temp_path, **template_vars
+        )
 
-            # Submit prefill profiling job
-            _, rendered_script_prefill = generate_job_script(
-                "job_script_template_prefill_profile.j2", temp_path, **template_vars
-            )
-
-            prefill_job_id = submit_job(temp_path, args.extra_slurm_args)
-            submitted_job_ids.append(prefill_job_id)
-            logging.info(f"Submitted prefill profiling job: {prefill_job_id}")
-
-            # Create prefill log directory
-            prefill_log_dir_name = f"{prefill_job_id}_{prefill_workers}P_profile_{timestamp}"
-            prefill_log_dir_path = base_log_dir / prefill_log_dir_name
-            os.makedirs(prefill_log_dir_path, exist_ok=True)
-
-            # Save prefill sbatch script
-            with open(os.path.join(prefill_log_dir_path, "sbatch_script.sh"), "w") as f:
-                f.write(rendered_script_prefill)
-            logging.info(f"Saved prefill sbatch script to {prefill_log_dir_path}/sbatch_script.sh")
-
-            # Save prefill metadata
-            prefill_metadata = create_job_metadata(prefill_job_id, timestamp, args, benchmark_config)
-            with open(os.path.join(prefill_log_dir_path, f"{prefill_job_id}.json"), "w") as f:
-                json.dump(prefill_metadata, f, indent=2)
-            logging.info(f"Saved prefill job metadata to {prefill_log_dir_path}/{prefill_job_id}.json")
-
-            # Submit decode profiling job
-            _, rendered_script_decode = generate_job_script(
-                "job_script_template_decode_profile.j2", temp_path, **template_vars
-            )
-
-            decode_job_id = submit_job(temp_path, args.extra_slurm_args)
-            submitted_job_ids.append(decode_job_id)
-            logging.info(f"Submitted decode profiling job: {decode_job_id}")
-
-            # Create decode log directory
-            decode_log_dir_name = f"{decode_job_id}_{decode_workers}D_profile_{timestamp}"
-            decode_log_dir_path = base_log_dir / decode_log_dir_name
-            os.makedirs(decode_log_dir_path, exist_ok=True)
-
-            # Save decode sbatch script
-            with open(os.path.join(decode_log_dir_path, "sbatch_script.sh"), "w") as f:
-                f.write(rendered_script_decode)
-            logging.info(f"Saved decode sbatch script to {decode_log_dir_path}/sbatch_script.sh")
-
-            # Save decode metadata
-            decode_metadata = create_job_metadata(decode_job_id, timestamp, args, benchmark_config)
-            with open(os.path.join(decode_log_dir_path, f"{decode_job_id}.json"), "w") as f:
-                json.dump(decode_metadata, f, indent=2)
-            logging.info(f"Saved decode job metadata to {decode_log_dir_path}/{decode_job_id}.json")
-
-            # Set log_dir_name for welcome message (use prefill)
-            log_dir_name = prefill_log_dir_name
-            log_dir_already_created = True
-        elif args.sglang_torch_profiler and is_aggregated:
-            # Aggregated profiling mode: single job
-            _, rendered_script = generate_job_script(
-                "job_script_template_agg_profile.j2", temp_path, **template_vars
-            )
-
-            job_id = submit_job(temp_path, args.extra_slurm_args)
-            submitted_job_ids.append(job_id)
-            log_dir_already_created = False
-        else:
-            # Normal mode (non-profiling): single job submission
-            _, rendered_script = generate_job_script(
-                template_path, temp_path, **template_vars
-            )
-
-            job_id = submit_job(temp_path, args.extra_slurm_args)
-            submitted_job_ids.append(job_id)
-            log_dir_already_created = False
+        job_id = submit_job(temp_path, args.extra_slurm_args)
+        submitted_job_ids.append(job_id)
+        log_dir_already_created = False
 
         # Create log directory with new naming format IMMEDIATELY after submission
         # SLURM will write log.out/log.err to this directory when job starts

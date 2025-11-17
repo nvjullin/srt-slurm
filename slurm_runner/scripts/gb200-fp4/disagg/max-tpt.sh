@@ -83,6 +83,12 @@ if [ "$mode" = "prefill" ]; then
     command_suffix=""
     if [[ "${USE_INIT_LOCATIONS,,}" == "true" ]]; then command_suffix=" "; fi
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode prefill"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
 
     # we have to install pre-release cutedsl for a integer overflow fix
     python3 -m pip install --no-cache-dir --upgrade --pre nvidia-cutlass-dsl
@@ -108,7 +114,7 @@ if [ "$mode" = "prefill" ]; then
     python3 -m $PYTHON_MODULE \
         --served-model-name deepseek-ai/DeepSeek-R1 \
         --model-path /model/ \
-        --disaggregation-mode prefill \
+        $DISAGG_MODE_FLAG \
         --decode-log-interval 1000 \
         --max-running-requests 30000 \
         --context-length 2176 \
@@ -159,6 +165,12 @@ elif [ "$mode" = "decode" ]; then
     command_suffix=""
     if [[ "${USE_INIT_LOCATIONS,,}" == "true" ]]; then command_suffix=" "; fi
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode decode"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
 
     # set your own cache variables here
     export TORCH_DISTRIBUTED_DEFAULT_TIMEOUT=1800
@@ -186,7 +198,7 @@ elif [ "$mode" = "decode" ]; then
         --served-model-name deepseek-ai/DeepSeek-R1 \
         --model-path /model/ \
         --trust-remote-code \
-        --disaggregation-mode decode \
+        $DISAGG_MODE_FLAG \
         --host 0.0.0.0 \
         --decode-log-interval 1000 \
         --max-running-requests 67584 \

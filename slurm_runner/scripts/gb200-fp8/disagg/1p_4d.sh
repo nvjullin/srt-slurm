@@ -92,6 +92,13 @@ if [ "$mode" = "prefill" ]; then
     if [[ "${USE_INIT_LOCATIONS,,}" == "true" ]]; then command_suffix="--init-expert-location /configs/prefill_dsr1-0528_in1000out1000_num40000.json"; fi
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
 
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode prefill"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
+
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     MC_TE_METRIC=true \
     SGLANG_ENABLE_FLASHINFER_GEMM=1 \
@@ -130,7 +137,7 @@ if [ "$mode" = "prefill" ]; then
         --nnodes "$TOTAL_NODES" \
         --node-rank "$RANK" \
         --base-gpu-id 0 \
-        --disaggregation-mode prefill \
+        $DISAGG_MODE_FLAG \
         --host 0.0.0.0 \
         --tensor-parallel-size "$TOTAL_GPUS" \
         --data-parallel-size 1 \
@@ -148,6 +155,13 @@ elif [ "$mode" = "decode" ]; then
     command_suffix=""
     if [[ "${USE_INIT_LOCATIONS,,}" == "true" ]]; then command_suffix="--init-expert-location /configs/decode_dsr1-0528_loadgen_in1024out1024_num2000_2p12d.json"; fi
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
+
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode decode"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
 
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     MC_TE_METRIC=true \
@@ -188,7 +202,7 @@ elif [ "$mode" = "decode" ]; then
         --nnodes "$TOTAL_NODES" \
         --node-rank "$RANK" \
         --base-gpu-id 0 \
-        --disaggregation-mode decode \
+        $DISAGG_MODE_FLAG \
         --host 0.0.0.0 \
         --tensor-parallel-size "$TOTAL_GPUS" \
         --data-parallel-size 1 \

@@ -88,6 +88,13 @@ if [ "$mode" = "prefill" ]; then
     command_suffix=""
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
 
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode prefill"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
+
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     PYTHONUNBUFFERED=1 \
     python3 -m $PYTHON_MODULE \
@@ -101,7 +108,7 @@ if [ "$mode" = "prefill" ]; then
         --enable-dp-attention \
         --trust-remote-code \
         --skip-tokenizer-init \
-        --disaggregation-mode prefill \
+        $DISAGG_MODE_FLAG \
         --disaggregation-transfer-backend nixl \
         --disaggregation-bootstrap-port 30001 \
         --load-balance-method round_robin \
@@ -119,6 +126,13 @@ elif [ "$mode" = "decode" ]; then
     command_suffix=""
     if [[ -n "${DUMP_CONFIG_PATH}" ]]; then command_suffix="${command_suffix} --dump-config-to ${DUMP_CONFIG_PATH}"; fi
 
+    # Only add --disaggregation-mode if not in profiling mode
+    if [[ "${USE_SGLANG_LAUNCH_SERVER,,}" != "true" ]]; then
+        DISAGG_MODE_FLAG="--disaggregation-mode decode"
+    else
+        DISAGG_MODE_FLAG=""
+    fi
+
     DYN_SKIP_SGLANG_LOG_FORMATTING=1 \
     PYTHONUNBUFFERED=1 \
     python3 -m $PYTHON_MODULE \
@@ -132,7 +146,7 @@ elif [ "$mode" = "decode" ]; then
         --enable-dp-attention \
         --trust-remote-code \
         --skip-tokenizer-init \
-        --disaggregation-mode decode \
+        $DISAGG_MODE_FLAG \
         --disaggregation-transfer-backend nixl \
         --disaggregation-bootstrap-port 30001 \
         --host 0.0.0.0 \
