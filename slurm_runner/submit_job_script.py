@@ -629,7 +629,7 @@ def main(input_args: list[str] | None = None):
         "benchmark_type": benchmark_config["type"],
         "benchmark_arg": parsable_config,
         "timestamp": timestamp,
-        "enable_config_dump": args.enable_config_dump,
+        "enable_config_dump": args.enable_config_dump and not args.sglang_torch_profiler,  # Disable config dump when profiling
         "use_dynamo_whls": True,  # Always true when config-dir is set
         "log_dir_prefix": log_dir_prefix,
         "profiling_enabled": args.sglang_torch_profiler,
