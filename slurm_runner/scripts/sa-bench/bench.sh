@@ -47,17 +47,13 @@ curl http://${head_node}:${head_port}/v1/chat/completions   -H "Content-Type: ap
   }'
 
 set -e
-# Warmup the model with a sweep of concurrencies
-warmup_isl=$chosen_isl
-warmup_osl=$chosen_osl
-warmup_req_rate=250
-warmup_concurrency_list=(1 4 8 32 64 128 256 512 1024 4096)
-
-for warmup_concurrency in "${warmup_concurrency_list[@]}"
+# Warmup the model with the same configuration as the benchmark
+# Only difference between warmup and benchmark is request rate
+for concurrency in "${chosen_concurrencies[@]}"
 do
-    echo "Warming up model with concurrency $warmup_concurrency"
+    echo "Warming up model with concurrency $concurrency"
     echo "$(date '+%Y-%m-%d %H:%M:%S')"
-    num_prompts=$((warmup_concurrency * 5))
+    num_prompts=$((concurrency * 5))
     set -x
     python3 -u benchmark_serving.py \
         --model ${model_name} --tokenizer ${model_path} \
@@ -66,13 +62,13 @@ do
         --disable-tqdm \
         --dataset-name random \
         --num-prompts "$num_prompts" \
-        --random-input-len $warmup_isl \
-        --random-output-len $warmup_osl \
+        --random-input-len $chosen_isl \
+        --random-output-len $chosen_osl \
         --random-range-ratio 0.8 \
         --ignore-eos \
-        --request-rate ${warmup_req_rate} \
+        --request-rate 250 \
         --percentile-metrics ttft,tpot,itl,e2el \
-        --max-concurrency "$warmup_concurrency"
+        --max-concurrency "$concurrency"
     set +x
     echo "$(date '+%Y-%m-%d %H:%M:%S')"
 done
