@@ -2,7 +2,7 @@ name: "gb200-fp8-8k1k-1p-1d-low-latency"
 
 model:
   path: "dsfp8"
-  container: "0.5.4.post3"
+  container: "0.5.5.post2"
   precision: "fp8"
 
 resources:
