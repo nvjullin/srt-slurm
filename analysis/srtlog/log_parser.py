@@ -100,7 +100,8 @@ class NodeAnalyzer:
         node_info = self._extract_node_info_from_filename(filepath)
         if not node_info:
             logger.warning(
-                f"Could not extract node info from filename: {filepath}. " f"Expected format: <node>_<service>_<id>.err or .out"
+                f"Could not extract node info from filename: {filepath}. "
+                f"Expected format: <node>_<service>_<id>.err or .out"
             )
             return None
 

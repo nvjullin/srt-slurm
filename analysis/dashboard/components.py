@@ -80,7 +80,7 @@ def sync_cloud_data(logs_dir):
 
 def get_logs_dir_fingerprint(logs_dir):
     """Get a fingerprint of the logs directory for cache invalidation.
-    
+
     Returns a tuple of sorted subdirectory names. When new directories are added,
     the fingerprint changes, automatically invalidating the cache.
     """

@@ -17,8 +17,7 @@ def _get_sglang_version() -> str | None:
     """Get the installed sglang version."""
     try:
         result = subprocess.run(
-            ["python", "-c", "import sglang; print(sglang.__version__)"],
-            capture_output=True, text=True
+            ["python", "-c", "import sglang; print(sglang.__version__)"], capture_output=True, text=True
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -34,7 +33,7 @@ def _patch_sglang_engine():
     if version != "0.5.5.post2":
         logging.info(f"Skipping patch - sglang version {version} != 0.5.5.post2")
         return
-    
+
     logging.info("Applying temporary patch to engine.py (sglang 0.5.5.post2)")
     sed_cmd = (
         "sed -i '/self.send_to_rpc = get_zmq_socket(/,/^        )/c\\"
@@ -52,24 +51,26 @@ def _patch_sglang_engine():
     else:
         logging.info("Patch applied successfully")
 
+
 def _run_setup_script(setup_script: str | None = None):
     """
     Run a setup script in the /configs directory if explicitly provided.
-    
+
     Args:
-        setup_script: Custom setup script name (e.g., 'custom-setup.sh'). 
+        setup_script: Custom setup script name (e.g., 'custom-setup.sh').
                      If None, no setup script runs.
     """
     if not setup_script:
         return
-    
+
     script_path = f"/configs/{setup_script}"
-    
+
     if os.path.exists(script_path):
         logging.info(f"Running setup script: {script_path}")
         run_command(f"bash {script_path}")
     else:
         logging.warning(f"Setup script not found: {script_path}")
+
 
 def setup_prefill_worker(
     worker_idx: int,

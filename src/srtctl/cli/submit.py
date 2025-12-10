@@ -147,7 +147,13 @@ class DryRunContext:
         print("\n" + "=" * 60 + "\n")
 
 
-def submit_single(config_path: Path = None, config: dict = None, dry_run: bool = False, setup_script: str = None, tags: list[str] = None):
+def submit_single(
+    config_path: Path = None,
+    config: dict = None,
+    dry_run: bool = False,
+    setup_script: str = None,
+    tags: list[str] = None,
+):
     """
     Submit a single job from YAML config.
 
@@ -461,9 +467,7 @@ Examples:
 
     # Apply command
     apply_parser = subparsers.add_parser("apply", help="Submit job(s) to SLURM")
-    apply_parser.add_argument(
-        "-f", "--file", type=Path, required=True, dest="config", help="YAML config file"
-    )
+    apply_parser.add_argument("-f", "--file", type=Path, required=True, dest="config", help="YAML config file")
     apply_parser.add_argument(
         "--sweep",
         action="store_true",
@@ -484,9 +488,7 @@ Examples:
 
     # Dry-run command
     dry_run_parser = subparsers.add_parser("dry-run", help="Validate and generate artifacts without submitting")
-    dry_run_parser.add_argument(
-        "-f", "--file", type=Path, required=True, dest="config", help="YAML config file"
-    )
+    dry_run_parser.add_argument("-f", "--file", type=Path, required=True, dest="config", help="YAML config file")
     dry_run_parser.add_argument(
         "--sweep",
         action="store_true",
@@ -495,9 +497,7 @@ Examples:
 
     # Validate command (alias for dry-run)
     validate_parser = subparsers.add_parser("validate", help="Alias for dry-run")
-    validate_parser.add_argument(
-        "-f", "--file", type=Path, required=True, dest="config", help="YAML config file"
-    )
+    validate_parser.add_argument("-f", "--file", type=Path, required=True, dest="config", help="YAML config file")
     validate_parser.add_argument(
         "--sweep",
         action="store_true",

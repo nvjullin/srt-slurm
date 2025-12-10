@@ -25,7 +25,9 @@ def render(filtered_runs: list, logs_dir: str):
     # Toggle for request rate approximation
     col1, col2 = st.columns([1, 3])
     with col1:
-        show_request_rate = st.toggle("Show Request Rate", value=False, help="Convert tokens/s to requests/s using ISL/OSL")
+        show_request_rate = st.toggle(
+            "Show Request Rate", value=False, help="Convert tokens/s to requests/s using ISL/OSL"
+        )
 
     st.caption("""
     **What to look for:**
@@ -88,8 +90,7 @@ def render(filtered_runs: list, logs_dir: str):
             isl = int(run.profiler.isl) if run.profiler.isl else None
             osl = int(run.profiler.osl) if run.profiler.osl else None
             rate_fig = _create_rate_match_graph(
-                prefill_nodes, decode_nodes, run.job_id,
-                show_request_rate=show_request_rate, isl=isl, osl=osl
+                prefill_nodes, decode_nodes, run.job_id, show_request_rate=show_request_rate, isl=isl, osl=osl
             )
             st.plotly_chart(rate_fig, width="stretch", key=f"rate_match_{run.job_id}")
 
@@ -100,7 +101,7 @@ def render(filtered_runs: list, logs_dir: str):
 
 def _create_rate_match_graph(prefill_nodes, decode_nodes, job_id="", show_request_rate=False, isl=None, osl=None):
     """Create rate matching graph comparing prefill input vs decode generation.
-    
+
     Args:
         prefill_nodes: List of prefill node metrics
         decode_nodes: List of decode node metrics
@@ -112,7 +113,7 @@ def _create_rate_match_graph(prefill_nodes, decode_nodes, job_id="", show_reques
     rate_fig = go.Figure()
 
     title_suffix = f" - Job {job_id}" if job_id else ""
-    
+
     # Determine divisors for request rate conversion
     prefill_divisor = isl if (show_request_rate and isl) else 1
     decode_divisor = osl if (show_request_rate and osl) else 1

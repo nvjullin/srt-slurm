@@ -59,7 +59,7 @@ def build_sglang_command_from_yaml(
 
     # Determine Python module based on profiling mode
     python_module = "sglang.launch_server" if profiler != "none" else "dynamo.sglang"
-    nsys_prefix=f"nsys profile -t cuda,nvtx --cuda-graph-trace=node -c cudaProfilerApi --capture-range-end stop --force-overwrite true -o /logs/profiles/{config_key}_{rank}"
+    nsys_prefix = f"nsys profile -t cuda,nvtx --cuda-graph-trace=node -c cudaProfilerApi --capture-range-end stop --force-overwrite true -o /logs/profiles/{config_key}_{rank}"
 
     if profiler != "none":
         # Profiling mode: inline all flags (sglang.launch_server doesn't support --config)
