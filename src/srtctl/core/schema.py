@@ -39,6 +39,9 @@ class ClusterConfig(BaseModel):
     use_gpus_per_node_directive: Optional[bool] = Field(
         True, description="Include #SBATCH --gpus-per-node directive (set False for incompatible clusters)"
     )
+    use_segment_sbatch_directive: Optional[bool] = Field(
+        True, description="Include #SBATCH --segment directive for segment-based scheduling"
+    )
 
     # Path settings
     srtctl_root: Optional[str] = Field(

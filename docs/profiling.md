@@ -9,14 +9,9 @@ Add a `profiling` section to your job YAML:
 ```yaml
 profiling:
   type: "torch" # or "nsys"
-  prefill:
-    isl: 1024
-    osl: 128
-    concurrency: 24
-  decode:
-    isl: 1024
-    osl: 128
-    concurrency: 256
+  isl: 1024
+  osl: 128
+  concurrency: 24
 ```
 
 ## Profiling Modes
@@ -34,23 +29,16 @@ profiling:
 ```yaml
 profiling:
   type: "torch" # Required: "none", "torch", or "nsys"
-
-  prefill: # Optional: prefill-specific parameters
-    isl: 1024 # Input sequence length
-    osl: 128 # Output sequence length
-    concurrency: 24 # Batch size for profiling workload
-    start_step: 0 # Step to start profiling
-    stop_step: 50 # Step to stop profiling
-
-  decode: # Optional: decode-specific parameters
-    isl: 1024
-    osl: 128
-    concurrency: 256
-    start_step: 0
-    stop_step: 50
+  isl: 1024 # Input sequence length
+  osl: 128 # Output sequence length
+  concurrency: 24 # Batch size for profiling workload
+  start_step: 0 # Step to start profiling (optional)
+  stop_step: 50 # Step to stop profiling (optional)
 ```
 
-### Phase Parameters
+The same profiling parameters are used for both prefill and decode workers in disaggregated mode.
+
+### Parameters
 
 | Parameter     | Description                                   | Default  |
 | ------------- | --------------------------------------------- | -------- |
@@ -114,8 +102,8 @@ nsys profile -t cuda,nvtx --cuda-graph-trace=node \
 name: "profiling-torch"
 
 model:
-  path: "dsfp8"
-  container: "0.5.5"
+  path: "deepseek-r1"
+  container: "latest"
   precision: "fp8"
 
 resources:
@@ -128,18 +116,11 @@ resources:
 
 profiling:
   type: "torch"
-  prefill:
-    isl: 1024
-    osl: 128
-    concurrency: 24
-    start_step: 0
-    stop_step: 50
-  decode:
-    isl: 1024
-    osl: 128
-    concurrency: 256
-    start_step: 0
-    stop_step: 50
+  isl: 1024
+  osl: 128
+  concurrency: 24
+  start_step: 0
+  stop_step: 50
 
 benchmark:
   type: "manual"
@@ -147,11 +128,11 @@ benchmark:
 backend:
   sglang_config:
     prefill:
-      model-path: "/model/"
-      # ... other flags
+      kv-cache-dtype: "fp8_e4m3"
+      tensor-parallel-size: 4
     decode:
-      model-path: "/model/"
-      # ... other flags
+      kv-cache-dtype: "fp8_e4m3"
+      tensor-parallel-size: 4
 ```
 
 ### Nsight Systems (Recommended for GPU kernel analysis)
@@ -159,18 +140,11 @@ backend:
 ```yaml
 profiling:
   type: "nsys"
-  prefill:
-    isl: 2048
-    osl: 64
-    concurrency: 16
-    start_step: 10
-    stop_step: 30
-  decode:
-    isl: 2048
-    osl: 64
-    concurrency: 512
-    start_step: 10
-    stop_step: 30
+  isl: 2048
+  osl: 64
+  concurrency: 16
+  start_step: 10
+  stop_step: 30
 ```
 
 ## Output Files
@@ -179,8 +153,7 @@ After profiling completes, find results in the job's log directory:
 
 ```
 logs/{job_id}_{workers}_{timestamp}/
-├── profile_prefill.out     # Prefill profiling script output
-├── profile_decode.out      # Decode profiling script output
+├── profile_all.out         # Unified profiling script output
 └── profiles/
     ├── prefill/            # Torch profiler traces (if type: torch)
     │   └── *.json

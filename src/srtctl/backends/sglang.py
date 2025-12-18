@@ -338,6 +338,7 @@ class SGLangBackend(Backend):
             "decode_profile_env": decode_profile_env,
             "setup_script": self.setup_script,
             "use_gpus_per_node_directive": get_srtslurm_setting("use_gpus_per_node_directive", True),
+            "use_segment_sbatch_directive": get_srtslurm_setting("use_segment_sbatch_directive", True),
             "extra_container_mounts": ",".join(self.config.get("extra_mount") or []),
         }
 

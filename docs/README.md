@@ -12,6 +12,7 @@ Running large language models across multiple GPUs and nodes requires orchestrat
 - **Validation** - Catch configuration errors before submitting to SLURM
 - **Reproducibility** - Every job saves its full configuration for later reference
 - **Parameter sweeps** - Run grid searches across configurations with a single command
+- **Profiling support** - Built-in torch/nsys profiling modes
 
 ## Architecture Overview
 
@@ -21,22 +22,35 @@ Running large language models across multiple GPUs and nodes requires orchestrat
 
 - Prefill workers handle the initial prompt processing
 - Decode workers handle token generation
-- An nginx load balancer distributes requests across frontends
+- Frontend distribution via nginx load balancer (default) or sglang_router
 
 **Aggregated Mode** runs combined prefill+decode on each worker, simpler but potentially less efficient for high-throughput scenarios.
 
 ## How It Works
 
-When you run `srtctl apply -f config.yaml`, the tool validates your configuration, resolves any aliases from your cluster config, generates a SLURM batch script and SGLang configuration files, then submits to SLURM. Once allocated, workers launch inside containers, discover each other through ETCD and NATS, and begin serving. If you've configured a benchmark, it runs automatically against the serving endpoint and saves results to the log directory.
+When you run `srtctl apply -f config.yaml`, the tool:
+
+1. Validates your configuration against the schema
+2. Resolves any aliases from your cluster config (`srtslurm.yaml`)
+3. Generates a SLURM batch script and SGLang configuration files
+4. Submits to SLURM
+
+Once allocated, workers launch inside containers, discover each other through ETCD and NATS, and begin serving. If you've configured a benchmark, it runs automatically against the serving endpoint and saves results to the log directory.
 
 ## Commands
 
-- `srtctl apply -f <config>` - Submit job(s) to SLURM (auto-detects sweep configs)
-- `srtctl apply -f <config> --setup-script <script>` - Submit with custom setup script
-- `srtctl dry-run -f <config>` - Validate and preview without submitting
+| Command                                            | Description                             |
+| -------------------------------------------------- | --------------------------------------- |
+| `srtctl apply -f <config>`                         | Submit job(s) to SLURM                  |
+| `srtctl apply -f <config> --setup-script <script>` | Submit with custom setup script         |
+| `srtctl apply -f <config> --tags tag1,tag2`        | Submit with tags for filtering          |
+| `srtctl dry-run -f <config>`                       | Validate and preview without submitting |
+| `srtctl validate -f <config>`                      | Alias for dry-run                       |
 
 ## Next Steps
 
 - [Installation](installation.md) - Set up `srtctl` and submit your first job
 - [Monitoring](monitoring.md) - Understanding job logs and debugging
 - [Parameter Sweeps](sweeps.md) - Run grid searches across configurations
+- [Profiling](profiling.md) - Performance analysis with torch/nsys
+- [Analyzing Results](analyzing.md) - Dashboard and visualization
