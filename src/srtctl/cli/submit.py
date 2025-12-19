@@ -70,6 +70,9 @@ def generate_minimal_sbatch_script(
 ) -> str:
     """Generate minimal sbatch script that calls the Python orchestrator.
 
+    The orchestrator runs INSIDE the container on the head node.
+    srtctl is pip-installed inside the container at job start.
+
     Args:
         config: Typed SrtConfig
         config_path: Path to the YAML config file
@@ -79,18 +82,24 @@ def generate_minimal_sbatch_script(
     """
     from jinja2 import Environment, FileSystemLoader
 
-    # Find template directory
+    # Find template directory and srtctl source
     srtctl_root = get_srtslurm_setting("srtctl_root")
     if srtctl_root:
         template_dir = Path(srtctl_root) / "scripts" / "templates"
+        srtctl_source = Path(srtctl_root)
     else:
-        template_dir = Path(__file__).parent.parent.parent.parent / "scripts" / "templates"
+        # srtctl source is the parent of src/srtctl (i.e., the repo root)
+        srtctl_source = Path(__file__).parent.parent.parent.parent
+        template_dir = srtctl_source / "scripts" / "templates"
 
     env = Environment(loader=FileSystemLoader(str(template_dir)))
     template = env.get_template("job_script_minimal.j2")
 
     total_nodes = calculate_required_nodes(config)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Resolve container image path (expand aliases from srtslurm.yaml)
+    container_image = os.path.expandvars(config.model.container)
 
     rendered = template.render(
         job_name=config.name,
@@ -103,7 +112,9 @@ def generate_minimal_sbatch_script(
         timestamp=timestamp,
         use_gpus_per_node_directive=get_srtslurm_setting("use_gpus_per_node_directive", True),
         use_segment_sbatch_directive=get_srtslurm_setting("use_segment_sbatch_directive", True),
-        python_executable=sys.executable,  # Use the same Python that ran srtctl
+        sbatch_directives=config.sbatch_directives,
+        container_image=container_image,
+        srtctl_source=str(srtctl_source.resolve()),
     )
 
     return rendered
