@@ -11,8 +11,8 @@
 ## Clone and Install
 
 ```bash
-git clone https://github.com/your-org/srtctl.git
-cd srtctl
+git clone https://github.com/ishandhanani/srt-slurm.git
+cd srt-slurm
 pip install -e .
 ```
 
