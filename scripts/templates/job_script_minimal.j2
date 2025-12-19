@@ -24,19 +24,19 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Minimal sbatch script - orchestration is handled by Python inside the container
+# Orchestrator runs on HOST (needs srun access), spawns containerized workers
 # Config: {{ config_path }}
 # Generated: {{ timestamp }}
 
 set -e
 
-# Setup output directories
+# Setup directories
 WORK_DIR="${PWD}"
 OUTPUT_DIR="${WORK_DIR}/outputs/${SLURM_JOB_ID}"
 LOG_DIR="${OUTPUT_DIR}/logs"
 mkdir -p "${LOG_DIR}"
 
-# Redirect all output to log file
+# Redirect output
 exec > >(tee "${LOG_DIR}/sweep_${SLURM_JOB_ID}.log")
 exec 2>&1
 
@@ -51,29 +51,28 @@ echo "Start: $(date)"
 echo "=========================================="
 echo ""
 
-# Copy config to output directory for reference
+# Copy config to output directory
 cp "{{ config_path }}" "${OUTPUT_DIR}/config.yaml"
 
-# Get head node (first node in allocation)
+# Get head node
 HEAD_NODE=$(scontrol show hostnames ${SLURM_NODELIST} | head -n1)
 echo "Head node: ${HEAD_NODE}"
+
+# Install srtctl into a temporary location and add to PYTHONPATH
+# This avoids needing srtctl pre-installed on the login node
+SRTCTL_INSTALL_DIR="${OUTPUT_DIR}/.srtctl_install"
+echo ""
+echo "Installing srtctl to ${SRTCTL_INSTALL_DIR}..."
+pip install --quiet --target="${SRTCTL_INSTALL_DIR}" "{{ srtctl_source }}"
+
+export PYTHONPATH="${SRTCTL_INSTALL_DIR}:${PYTHONPATH}"
+
+echo "Running orchestrator on host (with srun access)..."
 echo ""
 
-# Run the orchestrator inside the container on the head node
-# Mount srtctl source and install it, then run do_sweep
-echo "Starting orchestrator on ${HEAD_NODE} inside container..."
-
-srun --nodes=1 --ntasks=1 --nodelist=${HEAD_NODE} \
-    --container-image="{{ container_image }}" \
-    --container-mounts="{{ srtctl_source }}:/srtctl:ro,{{ config_path }}:/config.yaml:ro,${OUTPUT_DIR}:/outputs,${WORK_DIR}:/workspace" \
-    --output="${LOG_DIR}/orchestrator_${SLURM_JOB_ID}.log" \
-    bash -c '
-        set -e
-        echo "Installing srtctl inside container..."
-        pip install --quiet /srtctl
-        echo "Running orchestrator..."
-        python3 -u -m srtctl.cli.do_sweep /config.yaml
-    ' 2>&1 | tee "${LOG_DIR}/orchestrator_${SLURM_JOB_ID}.log"
+# Run orchestrator on the HOST (not in container) so it has access to srun
+# The orchestrator will spawn containerized workers
+python3 -u -m srtctl.cli.do_sweep "{{ config_path }}" 2>&1 | tee "${LOG_DIR}/orchestrator_${SLURM_JOB_ID}.log"
 
 EXIT_CODE=${PIPESTATUS[0]}
 
