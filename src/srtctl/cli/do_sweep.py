@@ -102,7 +102,7 @@ class SweepOrchestrator:
             raise RuntimeError(f"setup_head.py not found at {setup_script}")
 
         setup_script_container = Path("/tmp/setup_head.py")
-        infra_log = self.runtime.log_dir / f"infrastructure_{self.runtime.job_id}.log"
+        infra_log = self.runtime.log_dir / "log.out"
 
         cmd = [
             "python3", str(setup_script_container),
@@ -148,16 +148,18 @@ class SweepOrchestrator:
 
         section(f"Starting {mode} worker {index} on {process.node}", WRENCH, logger)
 
+        # Log and config files: {node}_{mode}_w{index}.out and {node}_config.json
+        worker_log = self.runtime.log_dir / f"{process.node}_{mode}_w{index}.out"
+        config_dump = self.runtime.log_dir / f"{process.node}_config.json"
+
         # Build command using backend's method
         cmd = self.backend.build_worker_command(
             process=process,
             endpoint_processes=endpoint_processes,
             runtime=self.runtime,
             use_sglang_router=self.config.frontend.use_sglang_router,
-            dump_config_path=self.runtime.log_dir / f"{mode}_config_{index}_{process.node}.json",
+            dump_config_path=config_dump,
         )
-
-        worker_log = self.runtime.log_dir / f"{mode}_{index}_{process.node}_{self.runtime.job_id}.log"
 
         # Environment variables
         env_to_set = {
@@ -229,7 +231,7 @@ class SweepOrchestrator:
         """Start dynamo frontend on the head node."""
         logger.info("Starting dynamo frontend on %s", self.runtime.nodes.head)
 
-        frontend_log = self.runtime.log_dir / f"frontend_{self.runtime.job_id}.log"
+        frontend_log = self.runtime.log_dir / f"{self.runtime.nodes.head}_frontend_0.out"
         cmd = ["python3", "-m", "dynamo.frontend", "--http-port=8000"]
         cmd.extend(self.config.frontend.get_router_args_list())
 
@@ -259,7 +261,7 @@ class SweepOrchestrator:
         """Start sglang-router on the head node."""
         logger.info("Starting sglang-router on %s", self.runtime.nodes.head)
 
-        router_log = self.runtime.log_dir / f"router_{self.runtime.job_id}.log"
+        router_log = self.runtime.log_dir / f"{self.runtime.nodes.head}_router.out"
 
         # Collect prefill and decode leader IPs
         prefill_ips = []
