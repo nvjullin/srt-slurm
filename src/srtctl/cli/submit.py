@@ -83,14 +83,15 @@ def generate_minimal_sbatch_script(
     from jinja2 import Environment, FileSystemLoader
 
     # Find template directory and srtctl source
+    # Templates are now in src/srtctl/templates/
+    template_dir = Path(__file__).parent.parent / "templates"
+    
     srtctl_root = get_srtslurm_setting("srtctl_root")
     if srtctl_root:
-        template_dir = Path(srtctl_root) / "scripts" / "templates"
         srtctl_source = Path(srtctl_root)
     else:
         # srtctl source is the parent of src/srtctl (i.e., the repo root)
         srtctl_source = Path(__file__).parent.parent.parent.parent
-        template_dir = srtctl_source / "scripts" / "templates"
 
     env = Environment(loader=FileSystemLoader(str(template_dir)))
     template = env.get_template("job_script_minimal.j2")

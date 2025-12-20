@@ -66,11 +66,6 @@ class RuntimeContext:
 
     This is the single source of truth for all runtime values and paths.
     All paths are absolute Path objects. Created via from_config() classmethod.
-
-    This replaces:
-    - Bash variables like LOG_DIR, MODEL_DIR at the top of Jinja templates
-    - The setup_env() function in worker_setup
-    - Scattered path computation throughout the codebase
     """
 
     # Runtime identifiers
@@ -155,12 +150,6 @@ class RuntimeContext:
             configs_dir = Path(source_dir) / "configs"
             if configs_dir.exists():
                 container_mounts[configs_dir.resolve()] = Path("/configs")
-
-        # Also add scripts directory for worker_setup.py
-        if source_dir:
-            scripts_dir = Path(source_dir) / "scripts"
-            if scripts_dir.exists():
-                container_mounts[scripts_dir.resolve()] = Path("/scripts")
 
         # Mount srtctl benchmark scripts
         from srtctl.benchmarks.base import SCRIPTS_DIR
