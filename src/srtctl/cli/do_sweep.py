@@ -105,8 +105,9 @@ class SweepOrchestrator:
                 f"if [ -f '{script_path}' ]; then bash '{script_path}'; else echo 'WARNING: {script_path} not found'; fi"
             )
 
-        # 2. Dynamo installation (required for dynamo.sglang when not using sglang router)
-        if not self.config.frontend.use_sglang_router:
+        # 2. Dynamo installation (required for dynamo.sglang when not using sglang router and not profiling)
+        # When profiling is enabled, we use sglang.launch_server directly (no dynamo)
+        if not self.config.frontend.use_sglang_router and not self.config.profiling.enabled:
             parts.append(
                 "echo 'Installing dynamo...' && "
                 "pip install --quiet ai-dynamo-runtime==0.7.0 ai-dynamo==0.7.0 && "
@@ -174,9 +175,16 @@ class SweepOrchestrator:
 
         section(f"Starting {mode} worker {index} on {process.node}", WRENCH, logger)
 
-        # Log and config files: {node}_{mode}_w{index}.out and {node}_config.json
+        # Log and config files
         worker_log = self.runtime.log_dir / f"{process.node}_{mode}_w{index}.out"
         config_dump = self.runtime.log_dir / f"{process.node}_config.json"
+
+        # Profiling setup
+        profiling = self.config.profiling
+        nsys_prefix = None
+        if profiling.is_nsys:
+            nsys_output = str(self.runtime.log_dir / f"{process.node}_{mode}_w{index}_profile")
+            nsys_prefix = profiling.get_nsys_prefix(nsys_output)
 
         # Build command using backend's method
         cmd = self.backend.build_worker_command(
@@ -184,6 +192,8 @@ class SweepOrchestrator:
             endpoint_processes=endpoint_processes,
             runtime=self.runtime,
             use_sglang_router=self.config.frontend.use_sglang_router,
+            profiling_enabled=profiling.enabled,
+            nsys_prefix=nsys_prefix,
             dump_config_path=config_dump,
         )
 
@@ -201,12 +211,19 @@ class SweepOrchestrator:
         # Add config environment variables
         env_to_set.update(self.runtime.environment)
 
+        # Add profiling environment variables
+        if profiling.enabled:
+            profile_dir = str(self.runtime.log_dir / "profiles")
+            env_to_set.update(profiling.get_env_vars(mode, profile_dir))
+
         # Set CUDA_VISIBLE_DEVICES if not using all GPUs
         if len(process.gpu_indices) < self.runtime.gpus_per_node:
             env_to_set["CUDA_VISIBLE_DEVICES"] = process.cuda_visible_devices
 
         logger.info("Command: %s", shlex.join(cmd))
         logger.info("Log: %s", worker_log)
+        if profiling.enabled:
+            logger.info("Profiling: %s mode", profiling.type)
 
         # Build bash preamble (setup script + dynamo install)
         bash_preamble = self._build_worker_preamble()
@@ -386,6 +403,12 @@ class SweepOrchestrator:
         logger.info("Config: %s", self.config.name)
         logger.info("Head node: %s", self.runtime.nodes.head)
         logger.info("Worker nodes: %s", ", ".join(self.runtime.nodes.worker))
+        if self.config.profiling.enabled:
+            logger.info("Profiling: %s (isl=%s, osl=%s, concurrency=%s)",
+                       self.config.profiling.type,
+                       self.config.profiling.isl,
+                       self.config.profiling.osl,
+                       self.config.profiling.concurrency)
 
         registry = ProcessRegistry(job_id=self.runtime.job_id)
         stop_event = threading.Event()

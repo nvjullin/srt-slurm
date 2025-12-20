@@ -73,6 +73,8 @@ class BackendProtocol(Protocol):
         endpoint_processes: list["Process"],
         runtime: "RuntimeContext",
         use_sglang_router: bool = False,
+        profiling_enabled: bool = False,
+        nsys_prefix: list[str] | None = None,
         dump_config_path: Optional["Path"] = None,
     ) -> list[str]:
         """Build command to start a worker process."""

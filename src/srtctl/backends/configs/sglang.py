@@ -145,9 +145,21 @@ class SGLangBackendConfig:
         endpoint_processes: list["Process"],
         runtime: "RuntimeContext",
         use_sglang_router: bool = False,
+        profiling_enabled: bool = False,
+        nsys_prefix: list[str] | None = None,
         dump_config_path: Path | None = None,
     ) -> list[str]:
-        """Build the command to start an SGLang worker process."""
+        """Build the command to start an SGLang worker process.
+
+        Args:
+            process: The process to start
+            endpoint_processes: All processes for this endpoint (for multi-node)
+            runtime: Runtime context with paths and settings
+            use_sglang_router: Use sglang.launch_server instead of dynamo.sglang
+            profiling_enabled: Whether profiling is enabled (forces sglang.launch_server)
+            nsys_prefix: Optional nsys profiling command prefix
+            dump_config_path: Path to dump config JSON
+        """
         from srtctl.core.runtime import get_hostname_ip
 
         mode = process.endpoint_mode
@@ -162,7 +174,9 @@ class SGLangBackendConfig:
         dist_init_port = 29500
 
         # Choose Python module
-        python_module = "sglang.launch_server" if use_sglang_router else "dynamo.sglang"
+        # When profiling is enabled, always use sglang.launch_server (not dynamo.sglang)
+        use_sglang = use_sglang_router or profiling_enabled
+        python_module = "sglang.launch_server" if use_sglang else "dynamo.sglang"
 
         # Get served model name from config
         served_model_name = runtime.model_path.name
@@ -174,7 +188,10 @@ class SGLangBackendConfig:
                         served_model_name = name
                         break
 
-        cmd = [
+        # Start with nsys prefix if provided
+        cmd: list[str] = list(nsys_prefix) if nsys_prefix else []
+
+        cmd.extend([
             "python3",
             "-m",
             python_module,
@@ -184,9 +201,9 @@ class SGLangBackendConfig:
             served_model_name,
             "--host",
             "0.0.0.0",
-        ]
+        ])
 
-        # Add disaggregation mode flag (not for agg mode)
+        # Add disaggregation mode flag (not for agg mode, not when using sglang router)
         if mode != "agg" and not use_sglang_router:
             cmd.extend(["--disaggregation-mode", mode])
 
@@ -204,7 +221,7 @@ class SGLangBackendConfig:
                 ]
             )
 
-        # Add config dump path
+        # Add config dump path (not when using sglang router)
         if dump_config_path and not use_sglang_router:
             cmd.extend(["--dump-config-to", str(dump_config_path)])
 

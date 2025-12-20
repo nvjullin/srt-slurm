@@ -346,18 +346,97 @@ class BenchmarkConfig:
 
 @dataclass(frozen=True)
 class ProfilingConfig:
-    """Profiling configuration."""
+    """Profiling configuration.
 
-    type: str = "none"
-    isl: int | None = None
-    osl: int | None = None
-    concurrency: int | None = None
-    start_step: int | None = None
-    stop_step: int | None = None
+    Supports two profiling modes:
+    - nsys: NVIDIA Nsight Systems profiling (wraps command with nsys profile)
+    - torch: PyTorch profiler (uses SGLANG_TORCH_PROFILER_DIR)
+
+    When profiling is enabled, workers use sglang.launch_server instead of dynamo.sglang.
+    """
+
+    type: str = "none"  # "none", "nsys", or "torch"
+    isl: int | None = None  # Input sequence length for profiling workload
+    osl: int | None = None  # Output sequence length for profiling workload
+    concurrency: int | None = None  # Batch size / concurrency
+    start_step: int | None = None  # Step to start profiling (default: 0)
+    stop_step: int | None = None  # Step to stop profiling (default: 50)
 
     @property
     def enabled(self) -> bool:
+        """Check if profiling is enabled."""
         return self.type != "none"
+
+    @property
+    def is_nsys(self) -> bool:
+        """Check if using NVIDIA Nsight Systems profiling."""
+        return self.type == "nsys"
+
+    @property
+    def is_torch(self) -> bool:
+        """Check if using PyTorch profiler."""
+        return self.type == "torch"
+
+    def get_env_vars(self, mode: str, profile_dir: str) -> dict[str, str]:
+        """Get profiling-specific environment variables.
+
+        Args:
+            mode: Worker mode (prefill/decode/agg)
+            profile_dir: Base directory for profiling output
+
+        Returns:
+            Dictionary of environment variables
+        """
+        if not self.enabled:
+            return {}
+
+        env = {
+            "PROFILING_MODE": mode,
+        }
+
+        if self.isl is not None:
+            env["PROFILE_ISL"] = str(self.isl)
+        if self.osl is not None:
+            env["PROFILE_OSL"] = str(self.osl)
+        if self.concurrency is not None:
+            env["PROFILE_CONCURRENCY"] = str(self.concurrency)
+        if self.start_step is not None:
+            env["PROFILE_START_STEP"] = str(self.start_step)
+        if self.stop_step is not None:
+            env["PROFILE_STOP_STEP"] = str(self.stop_step)
+
+        if self.is_torch:
+            env["SGLANG_TORCH_PROFILER_DIR"] = f"{profile_dir}/{mode}"
+
+        return env
+
+    def get_nsys_prefix(self, output_file: str) -> list[str]:
+        """Get nsys profiling command prefix.
+
+        Args:
+            output_file: Path for nsys output file (without extension)
+
+        Returns:
+            Command prefix list for nsys profiling
+        """
+        if not self.is_nsys:
+            return []
+
+        return [
+            "nsys",
+            "profile",
+            "-t",
+            "cuda,nvtx",
+            "--cuda-graph-trace=node",
+            "-c",
+            "cudaProfilerApi",
+            "--capture-range-end",
+            "stop",
+            "--force-overwrite",
+            "true",
+            "-o",
+            output_file,
+        ]
 
     Schema: ClassVar[builtins.type[Schema]] = Schema
 
