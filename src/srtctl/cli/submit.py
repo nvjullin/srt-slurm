@@ -18,6 +18,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -172,6 +173,28 @@ def submit_with_orchestrator(
         srtctl_source = Path(srtctl_root) if srtctl_root else Path(__file__).parent.parent.parent.parent
         output_dir = srtctl_source / "outputs" / job_id
         output_dir.mkdir(parents=True, exist_ok=True)
+
+        if not re.match(r"^[\w\-\._]+$", config.name):
+            console.print(
+                f"[bold yellow]Cannot symlink output dir:[/] config name '{config.name}' contains bad characters"
+            )
+        else:
+            try:
+                symlink_path = srtctl_source / "outputs" / config.name
+                if symlink_path.is_symlink():
+                    symlink_path.unlink()
+
+                if symlink_path.exists():
+                    console.print(
+                        f"[bold yellow]Cannot symlink output dir:[/] '{symlink_path}' already exists"
+                    )
+                else:
+                    symlink_path.symlink_to(output_dir)
+                    console.print(
+                        f"[bold green]Symlinked output dir:[/] {symlink_path} -> {output_dir}"
+                    )
+            except Exception as e:
+                console.print(f"[bold yellow]Cannot symlink output dir:[/] {e}")
 
         shutil.copy(config_path, output_dir / "config.yaml")
         shutil.copy(script_path, output_dir / "sbatch_script.sh")
