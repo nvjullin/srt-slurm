@@ -18,6 +18,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -205,6 +206,29 @@ def submit_with_orchestrator(
 
         shutil.copy(config_path, job_output_dir / "config.yaml")
         shutil.copy(script_path, job_output_dir / "sbatch_script.sh")
+
+        if not re.match(r"^[\w\-\._]+$", config.name):
+            console.print(
+                f"[bold yellow]Cannot symlink output dir:[/] config name '{config.name}' contains bad characters"
+            )
+        else:
+            try:
+                symlink_path = job_output_dir.parent / config.name
+                if symlink_path.is_symlink():
+                    symlink_path.unlink()
+
+                if symlink_path.exists():
+                    console.print(
+                        f"[bold yellow]Cannot symlink output dir:[/] '{symlink_path}' already exists"
+                    )
+                else:
+                    symlink_path.symlink_to(job_output_dir)
+                    console.print(
+                        f"[bold green]Symlinked output dir:[/] {symlink_path} -> {job_output_dir}"
+                    )
+            except Exception as e:
+                console.print(f"[bold yellow]Cannot symlink output dir:[/] {e}")
+
 
         # Build comprehensive job metadata
         metadata = {
