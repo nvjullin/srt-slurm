@@ -8,9 +8,12 @@ Handles starting backend worker processes (prefill/decode/agg).
 """
 
 import logging
+import os
+from pathlib import Path
 import shlex
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any
+import uuid
 
 from srtctl.core.processes import ManagedProcess, NamedProcesses
 from srtctl.core.slurm import start_srun_process
@@ -109,6 +112,12 @@ class WorkerStageMixin:
             dump_config_path=config_dump,
         )
 
+        tmp_path = (
+            Path(os.environ.get("TMPDIR", "/tmp")) / f"deepgem_cache_{uuid.uuid4().hex}"
+        )
+        tmp_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Using temporary DeepGem cache directory: {tmp_path}")
+
         # Environment variables
         env_to_set = {
             "HEAD_NODE_IP": self.runtime.head_node_ip,
@@ -116,6 +125,7 @@ class WorkerStageMixin:
             "NATS_SERVER": f"nats://{self.runtime.nodes.head}:4222",
             "DYN_SYSTEM_PORT": str(process.sys_port),
             "DYN_REQUEST_PLANE": "nats",
+            "SGLANG_DG_CACHE_DIR": str(tmp_path),
         }
 
         # Add mode-specific environment variables from backend
