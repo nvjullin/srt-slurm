@@ -71,7 +71,7 @@ result_dir="/logs/sa-bench_isl_${ISL}_osl_${OSL}"
 mkdir -p "$result_dir"
 
 for concurrency in "${CONCURRENCY_LIST[@]}"; do
-    num_prompts=$((concurrency * 8))
+    num_prompts=$((concurrency * 10))
     
     # Generate result filename based on mode
     if [ "$IS_DISAGGREGATED" = "true" ]; then
