@@ -116,6 +116,7 @@ class WorkerStageMixin:
             "NATS_SERVER": f"nats://{self.runtime.nodes.infra}:4222",
             "DYN_SYSTEM_PORT": str(process.sys_port),
             "DYN_REQUEST_PLANE": "nats",
+            "DEBUG_LOG_FILE": str(self.runtime.log_dir / f"{process.node}_debug.log"),
         }
 
         # Add mode-specific environment variables from backend
