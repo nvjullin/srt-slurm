@@ -25,7 +25,7 @@ from marshmallow_dataclass import dataclass
 
 if TYPE_CHECKING:
     from srtctl.backends.base import SrunConfig
-    from srtctl.benchmarks.base import AIPerfBenchmarkRunner, BenchmarkRunner
+    from srtctl.benchmarks.base import BenchmarkRunner
     from srtctl.core.runtime import RuntimeContext
     from srtctl.core.topology import Endpoint, Process
 
@@ -155,6 +155,10 @@ class VLLMProtocol:
         runner: BenchmarkRunner | None = None,
     ) -> dict[str, str]:
         """Get benchmark-specific env vars for vLLM runs."""
+        # Lazy imports to avoid circular dependency
+        from srtctl.benchmarks.base import AIPerfBenchmarkRunner
+        from srtctl.core.slurm import get_hostname_ip
+
         if runner is None or not isinstance(runner, AIPerfBenchmarkRunner):
             return {}
 
