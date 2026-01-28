@@ -15,6 +15,7 @@ resources:
   # Aggregated mode: 8 TP2 workers = 16 GPUs across 2 nodes
   agg_nodes: 2
   agg_workers: 8
+  gpus_per_agg: 2
 
 frontend:
   type: dynamo

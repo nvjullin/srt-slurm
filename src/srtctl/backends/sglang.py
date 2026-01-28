@@ -244,14 +244,7 @@ class SGLangProtocol:
         python_module = "sglang.launch_server" if use_sglang else "dynamo.sglang"
 
         # Get served model name from config
-        served_model_name = runtime.model_path.name
-        if self.sglang_config:
-            for cfg in [self.sglang_config.prefill, self.sglang_config.aggregated]:
-                if cfg:
-                    name = cfg.get("served-model-name") or cfg.get("served_model_name")
-                    if name:
-                        served_model_name = name
-                        break
+        served_model_name = self.get_served_model_name(runtime.model_path.name)
 
         # Start with nsys prefix if provided
         cmd: list[str] = list(nsys_prefix) if nsys_prefix else []

@@ -305,14 +305,7 @@ class VLLMProtocol:
         leader_ip = get_hostname_ip(endpoint_nodes[0])
 
         # Get served model name from config or use model path name
-        served_model_name = runtime.model_path.name
-        if self.vllm_config:
-            for cfg in [self.vllm_config.prefill, self.vllm_config.aggregated, self.vllm_config.decode]:
-                if cfg:
-                    name = cfg.get("served-model-name") or cfg.get("served_model_name")
-                    if name:
-                        served_model_name = name
-                        break
+        served_model_name = self.get_served_model_name(runtime.model_path.name)
 
         # Start with nsys prefix if provided
         cmd: list[str] = list(nsys_prefix) if nsys_prefix else []

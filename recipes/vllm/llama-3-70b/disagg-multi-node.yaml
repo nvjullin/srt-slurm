@@ -20,6 +20,8 @@ resources:
   decode_nodes: 1
   prefill_workers: 1
   decode_workers: 1
+  gpus_per_prefill: 8
+  gpus_per_decode: 8
 
 frontend:
   type: dynamo
