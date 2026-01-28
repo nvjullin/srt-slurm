@@ -19,11 +19,14 @@ from typing import (
     Literal,
 )
 
+from srtctl.core.slurm import get_hostname_ip
+
 from marshmallow import Schema
 from marshmallow_dataclass import dataclass
 
 if TYPE_CHECKING:
     from srtctl.backends.base import SrunConfig
+    from srtctl.benchmarks.base import AIPerfBenchmarkRunner, BenchmarkRunner
     from srtctl.core.runtime import RuntimeContext
     from srtctl.core.topology import Endpoint, Process
 
@@ -144,6 +147,28 @@ class VLLMProtocol:
                     if name:
                         return name
         return default
+
+    def get_benchmark_env(
+        self,
+        runtime: "RuntimeContext",
+        processes: list["Process"],
+        benchmark_type: str,
+        runner: "BenchmarkRunner" | None = None,
+    ) -> dict[str, str]:
+        """Get benchmark-specific env vars for vLLM runs."""
+        if runner is None or not isinstance(runner, AIPerfBenchmarkRunner):
+            return {}
+
+        urls: list[str] = []
+        for process in processes:
+            if process.sys_port > 0:
+                host = get_hostname_ip(process.node, runtime.network_interface)
+                urls.append(f"http://{host}:{process.sys_port}/metrics")
+
+        if not urls:
+            return {}
+
+        return {"AIPERF_SERVER_METRICS_URLS": ",".join(sorted(set(urls)))}
 
     def allocate_endpoints(
         self,

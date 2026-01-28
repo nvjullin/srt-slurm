@@ -156,7 +156,7 @@ class BenchmarkStageMixin:
         """Run the actual benchmark script."""
 
         cmd = runner.build_command(self.config, self.runtime)
-        env_to_set = self._get_benchmark_profiling_env(runner)
+        env_to_set = self._get_benchmark_env(runner)
 
         logger.info("Script: %s", runner.script_path)
         logger.info("Command: %s", shlex.join(cmd))
@@ -248,5 +248,22 @@ class BenchmarkStageMixin:
 
             # The profile.sh script only generates traffic when PROFILING_MODE=prefill
             env["PROFILING_MODE"] = "prefill"
+
+        return env
+
+    def _get_benchmark_env(self, runner: "BenchmarkRunner") -> dict[str, str]:
+        """Get environment variables for the benchmark script."""
+        env = self._get_benchmark_profiling_env(runner)
+
+        backend_env_hook = getattr(self.config.backend, "get_benchmark_env", None)
+        if callable(backend_env_hook):
+            env.update(
+                backend_env_hook(
+                    runtime=self.runtime,
+                    processes=self.backend_processes,
+                    benchmark_type=self.config.benchmark.type,
+                    runner=runner,
+                )
+            )
 
         return env

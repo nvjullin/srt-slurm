@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from srtctl.benchmarks.base import SCRIPTS_DIR, BenchmarkRunner, register_benchmark
+from srtctl.benchmarks.base import AIPerfBenchmarkRunner, SCRIPTS_DIR, register_benchmark
 
 if TYPE_CHECKING:
     from srtctl.core.runtime import RuntimeContext
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 
 @register_benchmark("mooncake-router")
-class MooncakeRouterRunner(BenchmarkRunner):
+class MooncakeRouterRunner(AIPerfBenchmarkRunner):
     """Mooncake Router benchmark for testing KV-aware routing using aiperf.
 
     Uses the Mooncake conversation trace dataset to benchmark prefix caching

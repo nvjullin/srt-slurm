@@ -17,6 +17,15 @@ TTFT_THRESHOLD=${4:-2000}
 ITL_THRESHOLD=${5:-25}
 TOKENIZER_PATH=${6:-"/model"}
 
+# Optional: extra Prometheus endpoints for AIPerf server metrics
+SERVER_METRICS_ARGS=()
+if [ -n "${AIPERF_SERVER_METRICS_URLS:-}" ]; then
+    IFS=',' read -r -a server_metrics_urls <<< "${AIPERF_SERVER_METRICS_URLS}"
+    if [ ${#server_metrics_urls[@]} -gt 0 ]; then
+        SERVER_METRICS_ARGS+=(--server-metrics "${server_metrics_urls[@]}")
+    fi
+fi
+
 # Setup directories
 BASE_DIR="/logs"
 TRACE_DIR="${BASE_DIR}/traces"
@@ -94,6 +103,7 @@ aiperf profile \
     --random-seed 42 \
     --ui simple \
     --artifact-dir "${RUN_ARTIFACT_DIR}" \
+    "${SERVER_METRICS_ARGS[@]}" \
     --goodput "time_to_first_token:${TTFT_THRESHOLD} inter_token_latency:${ITL_THRESHOLD}"
 
 BENCH_EXIT_CODE=$?
