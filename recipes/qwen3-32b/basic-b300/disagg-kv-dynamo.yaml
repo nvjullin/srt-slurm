@@ -23,7 +23,7 @@ resources:
 
 # until prefill router goes in 0.8.0
 dynamo:
-  version: "0.8.0"
+  top_of_tree: true
 
 frontend:
   type: dynamo
